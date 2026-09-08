@@ -1,0 +1,59 @@
+
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>{{ title or app_name or "CENTRALVET" }}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+{% if session.get('logged') %}
+<div class="layout">
+  <aside class="side">
+    <div class="client-logo-box">
+      <img src="{{ url_for('static', filename='centralvet_logo.png') }}" alt="CENTRALVET Agropecuária">
+    </div>
+    <div class="powered">Sistema por <b>VEL<span>TRIX</span></b></div>
+    <div class="company"><b>CENTRALVET</b><br><small>Agropecuária • Gestão e emissão fiscal</small></div>
+    <nav class="menu">
+      <a href="{{ url_for('index') }}">Painel geral</a>
+      <a href="{{ url_for('nova_venda') }}">Venda rápida</a>
+      <a href="{{ url_for('vendas') }}">Vendas</a>
+      <a href="{{ url_for('produtos') }}">Produtos</a>
+      <a href="{{ url_for('estoque') }}">Estoque</a>
+      <a href="{{ url_for('clientes') }}">Clientes</a>
+      <a href="{{ url_for('fornecedores') }}">Fornecedores</a>
+      <a href="{{ url_for('financeiro') }}">Financeiro</a>
+      <a href="{{ url_for('fiscal') }}">Fiscal NF-e/NFC-e</a>
+      <a href="{{ url_for('relatorios') }}">Relatórios</a>
+      <a href="{{ url_for('backups') }}">Backups</a>
+      <a href="{{ url_for('logout') }}">Sair</a>
+    </nav>
+  </aside>
+  <main class="main">
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        {% for cat,msg in messages %}<div class="flash {{cat}}">{{ msg }}</div>{% endfor %}
+      {% endif %}
+    {% endwith %}
+    {% block content %}{% endblock %}
+  </main>
+</div>
+{% else %}
+  {% block auth %}{% endblock %}
+{% endif %}
+<script>
+function moeda(v){return (Number(v||0)).toLocaleString('pt-BR',{style:'currency',currency:'BRL'});}
+function num(v){return (Number(v||0)).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});}
+function parseBR(v){ if(!v) return 0; v=(''+v).replace('R$','').replace(/\./g,'').replace(',','.').trim(); return Number(v)||0; }
+function filterTable(inputId, tableId){
+  const q = document.getElementById(inputId).value.toLowerCase();
+  document.querySelectorAll('#'+tableId+' tbody tr').forEach(tr=>{
+    tr.style.display = tr.innerText.toLowerCase().includes(q) ? '' : 'none';
+  });
+}
+</script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

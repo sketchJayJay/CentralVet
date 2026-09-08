@@ -1,0 +1,46 @@
+
+{% extends "base.html" %}
+{% block content %}
+<section class="hero">
+  <span class="badge">Produtos</span><h1>Produtos e estoque</h1>
+  <p>Cadastro com preço, NCM, CFOP, CST/CSOSN e estoque mínimo.</p>
+</section>
+<div class="card">
+  <h2>Novo produto</h2>
+  <form method="post">
+    <div class="row">
+      <div><label>Código</label><input name="codigo"></div>
+      <div><label>Nome do produto</label><input name="nome" required></div>
+      <div><label>Categoria</label><input name="categoria"></div>
+      <div><label>Unidade</label><input name="unidade" value="UN"></div>
+      <div><label>Preço custo</label><input name="preco_custo" placeholder="0,00"></div>
+      <div><label>Preço venda</label><input name="preco_venda" placeholder="0,00"></div>
+      <div><label>Estoque inicial</label><input name="estoque" placeholder="0"></div>
+      <div><label>Estoque mínimo</label><input name="estoque_minimo" placeholder="0"></div>
+      <div><label>NCM</label><input name="ncm"></div>
+      <div><label>CFOP</label><input name="cfop"></div>
+      <div><label>CST/CSOSN</label><input name="cst_csosn"></div>
+      <div><label>Alíquota %</label><input name="aliquota"></div>
+    </div>
+    <button class="green">Salvar produto</button>
+  </form>
+</div>
+<div class="card">
+  <div style="display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap">
+    <h2>Lista de produtos</h2>
+    <form method="get" style="display:flex;gap:8px"><input name="q" value="{{ q }}" placeholder="Buscar produto"><button>Buscar</button></form>
+  </div>
+  <table><thead><tr><th>Cód.</th><th>Produto</th><th>Estoque</th><th>Custo</th><th>Venda</th><th>Fiscal</th><th></th></tr></thead><tbody>
+  {% for p in rows %}
+  <tr>
+    <td>{{ p.codigo }}</td><td><b>{{ p.nome }}</b><br><small>{{ p.categoria }}</small></td>
+    <td><span class="pill {{ 'red' if p.estoque <= p.estoque_minimo else 'green' }}">{{ p.estoque|num }} {{ p.unidade }}</span></td>
+    <td>{{ p.preco_custo|money }}</td><td><b>{{ p.preco_venda|money }}</b></td>
+    <td><small>NCM {{ p.ncm }}<br>CFOP {{ p.cfop }} • {{ p.cst_csosn }}</small></td>
+    <td style="white-space:nowrap"><a class="btn secondary" href="{{ url_for('editar_produto', item_id=p.id) }}">Editar</a>
+      <form method="post" action="{{ url_for('excluir_produto', item_id=p.id) }}" style="display:inline" onsubmit="return confirm('Excluir produto?')"><button class="danger">Excluir</button></form></td>
+  </tr>
+  {% else %}<tr><td colspan="7">Nenhum produto cadastrado.</td></tr>{% endfor %}
+  </tbody></table>
+</div>
+{% endblock %}

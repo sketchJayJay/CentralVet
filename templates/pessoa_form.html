@@ -1,0 +1,19 @@
+
+{% extends "base.html" %}
+{% block content %}
+<section class="hero"><span class="badge">Editar</span><h1>{{ titulo }}</h1><p>Atualize os dados do cadastro.</p></section>
+<div class="card">
+  <form method="post">
+    <div class="row">
+      <div><label>Nome</label><input name="nome" value="{{ row.nome }}" required></div>
+      <div><label>CPF/CNPJ</label><input name="cpf_cnpj" value="{{ row.cpf_cnpj }}"></div>
+      <div><label>Telefone/WhatsApp</label><input name="telefone" value="{{ row.telefone }}"></div>
+      <div><label>E-mail</label><input name="email" value="{{ row.email }}"></div>
+    </div>
+    <label style="margin-top:12px">Endereço</label><input name="endereco" value="{{ row.endereco }}">
+    <label style="margin-top:12px">Observação</label><textarea name="observacao">{{ row.observacao }}</textarea>
+    <button class="green">Salvar alterações</button>
+    <a class="btn secondary" href="{{ url_for(tipo) }}">Voltar</a>
+  </form>
+</div>
+{% endblock %}

@@ -1,0 +1,41 @@
+
+{% extends "base.html" %}
+{% block content %}
+<section class="hero"><span class="badge">Financeiro</span><h1>Caixa, contas a pagar e receber</h1><p>Lançamentos manuais e automáticos vindos das vendas.</p></section>
+<div class="grid">
+  <div class="card metric"><div class="label">Entradas pagas</div><div class="value green">{{ cards.entradas|money }}</div></div>
+  <div class="card metric"><div class="label">Saídas pagas</div><div class="value warn">{{ cards.saidas|money }}</div></div>
+  <div class="card metric"><div class="label">A receber</div><div class="value warn">{{ cards.receber|money }}</div></div>
+  <div class="card metric"><div class="label">A pagar</div><div class="value warn">{{ cards.pagar|money }}</div></div>
+</div>
+<div class="card">
+<h2>Novo lançamento</h2>
+<form method="post">
+  <div class="row">
+    <div><label>Data</label><input type="date" name="data" value="{{ hoje }}"></div>
+    <div><label>Tipo</label><select name="tipo"><option>Entrada</option><option>Saída</option></select></div>
+    <div><label>Descrição</label><input name="descricao" required></div>
+    <div><label>Valor</label><input name="valor" required></div>
+    <div><label>Forma</label><input name="forma" placeholder="Pix, dinheiro, cartão..."></div>
+    <div><label>Status</label><select name="status"><option>Pago</option><option>Pendente</option></select></div>
+    <div><label>Vencimento</label><input type="date" name="vencimento"></div>
+    <div><label>Pessoa</label><input name="pessoa"></div>
+  </div>
+  <label style="margin-top:12px">Observação</label><input name="observacao">
+  <button class="green">Salvar lançamento</button>
+</form>
+</div>
+<div class="card">
+<h2>Lançamentos</h2>
+<form method="get" style="display:flex;gap:8px;margin-bottom:10px"><input name="q" value="{{q}}" placeholder="Buscar"><button>Buscar</button></form>
+<table><thead><tr><th>Data</th><th>Tipo</th><th>Descrição</th><th>Pessoa</th><th>Valor</th><th>Status</th><th></th></tr></thead><tbody>
+{% for r in rows %}
+<tr>
+  <td>{{r.data|brdate}}</td><td>{{r.tipo}}</td><td>{{r.descricao}}</td><td>{{r.pessoa}}</td><td><b>{{r.valor|money}}</b></td><td><span class="pill {{ 'green' if r.status=='Pago' else 'warn' }}">{{r.status}}</span></td>
+  <td>{% if r.status!='Pago' %}<form method="post" action="{{ url_for('financeiro_pagar', item_id=r.id) }}" style="display:inline"><button class="secondary">Marcar pago</button></form>{% endif %}
+  <form method="post" action="{{ url_for('financeiro_excluir', item_id=r.id) }}" style="display:inline" onsubmit="return confirm('Excluir lançamento?')"><button class="danger">Excluir</button></form></td>
+</tr>
+{% else %}<tr><td colspan="7">Sem lançamentos.</td></tr>{% endfor %}
+</tbody></table>
+</div>
+{% endblock %}

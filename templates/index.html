@@ -1,0 +1,68 @@
+
+{% extends "base.html" %}
+{% block content %}
+<section class="hero hero-branded">
+  <div>
+    <span class="badge">CENTRALVET Agropecuária</span>
+    <h1>Painel geral</h1>
+    <p>Vendas, estoque, caixa, contas e pendências em uma única tela.</p>
+  </div>
+  <div class="hero-logo">
+    <img src="{{ url_for('static', filename='centralvet_logo.png') }}" alt="CENTRALVET Agropecuária">
+  </div>
+  <div class="actions">
+    <a class="btn green" href="{{ url_for('nova_venda') }}">+ Nova venda</a>
+    <a class="btn" href="{{ url_for('produtos') }}">+ Produto</a>
+    <a class="btn secondary" href="{{ url_for('estoque') }}">Entrada/Saída estoque</a>
+    <a class="btn secondary" href="{{ url_for('backup') }}">Baixar backup</a>
+  </div>
+</section>
+
+<div class="grid">
+  <div class="card metric"><div class="label">Produtos ativos</div><div class="value">{{ total_produtos }}</div></div>
+  <div class="card metric"><div class="label">Produtos em estoque baixo</div><div class="value warn">{{ baixo }}</div></div>
+  <div class="card metric"><div class="label">Valor em estoque</div><div class="value">{{ estoque_valor|money }}</div></div>
+  <div class="card metric"><div class="label">Vendas do mês</div><div class="value green">{{ vendas_mes|money }}</div></div>
+  <div class="card metric"><div class="label">Lucro do mês</div><div class="value green">{{ lucro_mes|money }}</div></div>
+  <div class="card metric"><div class="label">A receber</div><div class="value warn">{{ a_receber|money }}</div></div>
+  <div class="card metric"><div class="label">A pagar</div><div class="value warn">{{ a_pagar|money }}</div></div>
+  <div class="card metric"><div class="label">Caixa registrado</div><div class="value">{{ saldo_caixa|money }}</div></div>
+</div>
+
+<div class="grid2">
+  <div class="card">
+    <h2>Pendências automáticas</h2>
+    {% if pendencias %}
+      {% for p in pendencias %}<p><span class="pill warn">{{ p }}</span></p>{% endfor %}
+    {% else %}
+      <p>Tudo certo por enquanto. Nenhum alerta importante.</p>
+    {% endif %}
+  </div>
+  <div class="card">
+    <h2>Estoque baixo</h2>
+    <table><thead><tr><th>Produto</th><th>Estoque</th><th>Mínimo</th></tr></thead><tbody>
+    {% for p in estoque_baixo %}
+      <tr><td>{{ p.nome }}</td><td>{{ p.estoque|num }} {{ p.unidade }}</td><td>{{ p.estoque_minimo|num }}</td></tr>
+    {% else %}<tr><td colspan="3">Nenhum produto em alerta.</td></tr>{% endfor %}
+    </tbody></table>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Últimas vendas</h2>
+  <table>
+    <thead><tr><th>Data</th><th>Cliente</th><th>Total</th><th>Status</th><th>Fiscal</th><th></th></tr></thead>
+    <tbody>
+    {% for v in ult_vendas %}
+      <tr>
+        <td>{{ v.data|brdate }}</td><td>{{ v.cliente_nome or 'Consumidor' }}</td>
+        <td><b>{{ v.total|money }}</b></td>
+        <td><span class="pill {{ 'green' if v.status=='Pago' else 'warn' }}">{{ v.status }}</span></td>
+        <td>{{ v.nf_status }}</td>
+        <td><a class="btn secondary" href="{{ url_for('recibo_venda', venda_id=v.id) }}">Recibo</a></td>
+      </tr>
+    {% else %}<tr><td colspan="6">Nenhuma venda lançada ainda.</td></tr>{% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

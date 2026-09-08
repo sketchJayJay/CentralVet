@@ -1,0 +1,38 @@
+
+{% extends "base.html" %}
+{% block content %}
+<section class="hero">
+  <span class="badge">Fiscal</span><h1>Configuração fiscal NF-e / NFC-e</h1>
+  <p>Base preparada para emissão. A autorização real depende do certificado digital, credenciais e validação com contador.</p>
+</section>
+<div class="card">
+<h2>Dados da empresa</h2>
+<form method="post">
+  <div class="row">
+    <div><label>Razão social</label><input name="razao_social" value="{{cfg.razao_social}}"></div>
+    <div><label>Nome fantasia</label><input name="nome_fantasia" value="{{cfg.nome_fantasia}}"></div>
+    <div><label>CNPJ</label><input name="cnpj" value="{{cfg.cnpj}}"></div>
+    <div><label>Inscrição estadual</label><input name="inscricao_estadual" value="{{cfg.inscricao_estadual}}"></div>
+    <div><label>Endereço</label><input name="endereco" value="{{cfg.endereco}}"></div>
+    <div><label>Município</label><input name="municipio" value="{{cfg.municipio}}"></div>
+    <div><label>UF</label><input name="uf" value="{{cfg.uf}}"></div>
+    <div><label>CEP</label><input name="cep" value="{{cfg.cep}}"></div>
+    <div><label>Telefone</label><input name="telefone" value="{{cfg.telefone}}"></div>
+    <div><label>E-mail</label><input name="email" value="{{cfg.email}}"></div>
+    <div><label>Regime tributário</label><input name="regime" value="{{cfg.regime}}" placeholder="Simples Nacional, etc."></div>
+    <div><label>Ambiente</label><select name="ambiente"><option {{'selected' if cfg.ambiente=='Homologação' else ''}}>Homologação</option><option {{'selected' if cfg.ambiente=='Produção' else ''}}>Produção</option></select></div>
+    <div><label>Certificado</label><input name="certificado_nome" value="{{cfg.certificado_nome}}" placeholder="Nome/validade do certificado"></div>
+    <div style="grid-column:span 3"><label>Observação fiscal</label><input name="observacao" value="{{cfg.observacao}}"></div>
+  </div>
+  <button class="green">Salvar configuração</button>
+</form>
+</div>
+<div class="card">
+<h2>Pré-notas / documentos preparados</h2>
+<table><thead><tr><th>Venda</th><th>Data</th><th>Cliente</th><th>Tipo</th><th>Status</th><th>Total</th></tr></thead><tbody>
+{% for n in notas %}
+<tr><td>#{{n.id}}</td><td>{{n.data|brdate}}</td><td>{{n.cliente_nome}}</td><td>{{n.nf_tipo}}</td><td>{{n.nf_status}} {{n.nf_numero or ''}}</td><td>{{n.total|money}}</td></tr>
+{% else %}<tr><td colspan="6">Nenhuma pré-nota gerada.</td></tr>{% endfor %}
+</tbody></table>
+</div>
+{% endblock %}

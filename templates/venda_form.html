@@ -1,0 +1,73 @@
+
+{% extends "base.html" %}
+{% block content %}
+<section class="hero">
+  <span class="badge">Venda rápida</span>
+  <h1>Nova venda</h1>
+  <p>Escolha os produtos, o sistema calcula total, baixa estoque, lança no financeiro e prepara NF-e/NFC-e.</p>
+</section>
+<form method="post" class="card" id="saleForm">
+  <h2>Dados da venda</h2>
+  <div class="row">
+    <div><label>Data</label><input type="date" name="data" value="{{ hoje }}"></div>
+    <div><label>Cliente cadastrado</label>
+      <select name="cliente_id"><option value="">Consumidor / cliente rápido</option>{% for c in clientes %}<option value="{{c.id}}">{{c.nome}}</option>{% endfor %}</select>
+    </div>
+    <div><label>Nome rápido do cliente</label><input name="cliente_nome" placeholder="Opcional"></div>
+    <div><label>Status</label><select name="status"><option>Pago</option><option>Pendente</option></select></div>
+    <div><label>Forma pagamento</label><select name="forma_pagamento"><option>Dinheiro</option><option>Pix</option><option>Cartão débito</option><option>Cartão crédito</option><option>Crediário</option><option>Boleto</option></select></div>
+    <div><label>Tipo fiscal</label><select name="nf_tipo"><option>NFC-e</option><option>NF-e</option><option>Sem nota agora</option></select></div>
+    <div><label>Desconto</label><input name="desconto" id="desconto" value="0" oninput="calcTotal()"></div>
+    <div><label>Observação</label><input name="observacao"></div>
+  </div>
+  <h2 style="margin-top:20px">Produtos da venda</h2>
+  <div id="items"></div>
+  <button type="button" class="secondary" onclick="addItem()">+ Adicionar produto</button>
+  <div class="card dark" style="margin-top:16px">
+    <h2>Total da venda: <span id="totalView">R$ 0,00</span></h2>
+    <p style="color:#b9d7ee">O sistema bloqueia venda maior que o estoque e baixa os produtos automaticamente ao salvar.</p>
+  </div>
+  <button class="green">Salvar venda e gerar recibo</button>
+  <a class="btn secondary" href="{{ url_for('vendas') }}">Voltar</a>
+</form>
+
+<template id="tpl">
+  <div class="item-row">
+    <div><label>Produto</label><select name="produto_id[]" onchange="fillPrice(this); calcTotal()" required>
+      <option value="">Selecione</option>
+      {% for p in produtos %}
+      <option value="{{p.id}}" data-price="{{p.preco_venda}}" data-stock="{{p.estoque}}" data-cost="{{p.preco_custo}}">{{p.nome}} — estoque {{p.estoque|num}} {{p.unidade}}</option>
+      {% endfor %}
+    </select></div>
+    <div><label>Qtd</label><input name="quantidade[]" value="1" oninput="calcTotal()"></div>
+    <div><label>Preço unit.</label><input name="preco_unit[]" oninput="calcTotal()"></div>
+    <button type="button" class="danger" onclick="this.closest('.item-row').remove();calcTotal()">Remover</button>
+  </div>
+</template>
+{% endblock %}
+{% block scripts %}
+<script>
+function addItem(){
+  const html = document.getElementById('tpl').innerHTML;
+  const div = document.createElement('div');
+  div.innerHTML = html;
+  document.getElementById('items').appendChild(div.firstElementChild);
+}
+function fillPrice(sel){
+  const opt = sel.selectedOptions[0];
+  const row = sel.closest('.item-row');
+  if(opt && opt.dataset.price){ row.querySelector('[name="preco_unit[]"]').value = String(opt.dataset.price).replace('.',','); }
+}
+function calcTotal(){
+  let subtotal=0;
+  document.querySelectorAll('.item-row').forEach(row=>{
+    const qtd=parseBR(row.querySelector('[name="quantidade[]"]').value);
+    const preco=parseBR(row.querySelector('[name="preco_unit[]"]').value);
+    subtotal += qtd*preco;
+  });
+  subtotal -= parseBR(document.getElementById('desconto').value);
+  document.getElementById('totalView').innerText = moeda(Math.max(0, subtotal));
+}
+addItem();
+</script>
+{% endblock %}

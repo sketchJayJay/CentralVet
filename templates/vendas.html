@@ -1,0 +1,22 @@
+
+{% extends "base.html" %}
+{% block content %}
+<section class="hero">
+  <span class="badge">Vendas</span><h1>Vendas realizadas</h1>
+  <p>Histórico de vendas, recibos, status financeiro e pré-notas fiscais.</p>
+  <div class="actions"><a class="btn green" href="{{ url_for('nova_venda') }}">+ Nova venda</a></div>
+</section>
+<div class="card">
+  <form method="get" style="display:flex;gap:8px;margin-bottom:12px"><input name="q" value="{{q}}" placeholder="Buscar cliente ou número"><button>Buscar</button></form>
+  <table><thead><tr><th>Nº</th><th>Data</th><th>Cliente</th><th>Total</th><th>Status</th><th>Fiscal</th><th>Ações</th></tr></thead><tbody>
+  {% for v in rows %}
+  <tr>
+    <td>#{{v.id}}</td><td>{{v.data|brdate}}</td><td>{{v.cliente_nome or 'Consumidor'}}</td><td><b>{{v.total|money}}</b></td>
+    <td><span class="pill {{ 'green' if v.status=='Pago' else 'warn' }}">{{v.status}}</span></td>
+    <td>{{v.nf_tipo or '-' }}<br><small>{{v.nf_status}} {{v.nf_numero or ''}}</small></td>
+    <td><a class="btn secondary" href="{{ url_for('recibo_venda', venda_id=v.id) }}">Recibo</a></td>
+  </tr>
+  {% else %}<tr><td colspan="7">Nenhuma venda ainda.</td></tr>{% endfor %}
+  </tbody></table>
+</div>
+{% endblock %}

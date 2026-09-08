@@ -1,0 +1,14 @@
+
+{% extends "base.html" %}
+{% block content %}
+<section class="hero"><span class="badge">Backups</span><h1>Backup dos dados</h1><p>O sistema gera backup após alterações importantes e também permite baixar manualmente.</p>
+<div class="actions"><a class="btn green" href="{{ url_for('backup') }}">Baixar backup agora</a></div></section>
+<div class="card">
+<h2>Últimos backups</h2>
+<table><thead><tr><th>Arquivo</th><th>Tamanho</th><th>Data</th></tr></thead><tbody>
+{% for f in files %}
+<tr><td>{{f.name}}</td><td>{{ (f.size/1024)|round(1) }} KB</td><td>{{f.mtime}}</td></tr>
+{% else %}<tr><td colspan="3">Nenhum backup salvo ainda.</td></tr>{% endfor %}
+</tbody></table>
+</div>
+{% endblock %}

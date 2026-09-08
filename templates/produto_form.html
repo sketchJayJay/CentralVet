@@ -1,0 +1,24 @@
+
+{% extends "base.html" %}
+{% block content %}
+<section class="hero"><span class="badge">Produto</span><h1>Editar produto</h1><p>Altere cadastro, preço, estoque e campos fiscais.</p></section>
+<div class="card">
+<form method="post">
+  <div class="row">
+    <div><label>Código</label><input name="codigo" value="{{ row.codigo }}"></div>
+    <div><label>Nome do produto</label><input name="nome" value="{{ row.nome }}" required></div>
+    <div><label>Categoria</label><input name="categoria" value="{{ row.categoria }}"></div>
+    <div><label>Unidade</label><input name="unidade" value="{{ row.unidade }}"></div>
+    <div><label>Preço custo</label><input name="preco_custo" value="{{ row.preco_custo }}"></div>
+    <div><label>Preço venda</label><input name="preco_venda" value="{{ row.preco_venda }}"></div>
+    <div><label>Estoque</label><input name="estoque" value="{{ row.estoque }}"></div>
+    <div><label>Estoque mínimo</label><input name="estoque_minimo" value="{{ row.estoque_minimo }}"></div>
+    <div><label>NCM</label><input name="ncm" value="{{ row.ncm }}"></div>
+    <div><label>CFOP</label><input name="cfop" value="{{ row.cfop }}"></div>
+    <div><label>CST/CSOSN</label><input name="cst_csosn" value="{{ row.cst_csosn }}"></div>
+    <div><label>Alíquota %</label><input name="aliquota" value="{{ row.aliquota }}"></div>
+  </div>
+  <button class="green">Salvar alterações</button><a class="btn secondary" href="{{ url_for('produtos') }}">Voltar</a>
+</form>
+</div>
+{% endblock %}

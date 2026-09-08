@@ -1,0 +1,28 @@
+
+{% extends "base.html" %}
+{% block content %}
+<section class="hero"><span class="badge">Estoque</span><h1>Entrada e saída de mercadorias</h1><p>Movimente estoque manualmente quando comprar, ajustar ou corrigir produtos.</p></section>
+<div class="card">
+  <h2>Nova movimentação</h2>
+  <form method="post">
+    <div class="row">
+      <div><label>Data</label><input type="date" name="data" value="{{ hoje }}"></div>
+      <div><label>Produto</label><select name="produto_id" required>{% for p in produtos %}<option value="{{p.id}}">{{p.nome}} — estoque {{p.estoque|num}}</option>{% endfor %}</select></div>
+      <div><label>Tipo</label><select name="tipo"><option>Entrada</option><option>Saída</option><option>Ajuste +</option><option>Ajuste -</option></select></div>
+      <div><label>Quantidade</label><input name="quantidade" required></div>
+      <div><label>Custo unitário</label><input name="custo_unit"></div>
+      <div><label>Origem</label><input name="origem" placeholder="Compra, perda, ajuste..."></div>
+      <div style="grid-column:span 2"><label>Observação</label><input name="observacao"></div>
+    </div>
+    <button class="green">Salvar movimentação</button>
+  </form>
+</div>
+<div class="card">
+<h2>Histórico de movimentações</h2>
+<table><thead><tr><th>Data</th><th>Produto</th><th>Tipo</th><th>Qtd</th><th>Valor</th><th>Obs.</th></tr></thead><tbody>
+{% for m in movs %}
+<tr><td>{{m.data|brdate}}</td><td>{{m.produto_nome}}</td><td>{{m.tipo}}</td><td>{{m.quantidade|num}}</td><td>{{m.valor_total|money}}</td><td>{{m.observacao}}</td></tr>
+{% else %}<tr><td colspan="6">Sem movimentações.</td></tr>{% endfor %}
+</tbody></table>
+</div>
+{% endblock %}

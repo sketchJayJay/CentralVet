@@ -1,0 +1,32 @@
+
+{% extends "base.html" %}
+{% block content %}
+<section class="hero"><span class="badge">Relatórios</span><h1>Relatórios de vendas e financeiro</h1><p>Filtre por período para acompanhar vendas, lucro e caixa.</p></section>
+<div class="card">
+<form method="get" class="row">
+  <div><label>Início</label><input type="date" name="inicio" value="{{inicio}}"></div>
+  <div><label>Fim</label><input type="date" name="fim" value="{{fim}}"></div>
+  <div style="display:flex;align-items:end"><button>Filtrar</button></div>
+</form>
+</div>
+<div class="grid">
+  <div class="card metric"><div class="label">Vendido no período</div><div class="value green">{{ vendas_periodo.total|money }}</div></div>
+  <div class="card metric"><div class="label">Lucro no período</div><div class="value green">{{ vendas_periodo.lucro|money }}</div></div>
+  <div class="card metric"><div class="label">Entradas pagas</div><div class="value">{{ entradas|money }}</div></div>
+  <div class="card metric"><div class="label">Saídas pagas</div><div class="value warn">{{ saidas|money }}</div></div>
+</div>
+<div class="grid2">
+  <div class="card">
+    <h2>Produtos mais vendidos</h2>
+    <table><thead><tr><th>Produto</th><th>Qtd</th><th>Total</th></tr></thead><tbody>
+      {% for p in mais_vendidos %}<tr><td>{{p.produto_nome}}</td><td>{{p.qtd|num}}</td><td>{{p.total|money}}</td></tr>{% else %}<tr><td colspan="3">Sem dados.</td></tr>{% endfor %}
+    </tbody></table>
+  </div>
+  <div class="card">
+    <h2>Vendas do período</h2>
+    <table><thead><tr><th>Data</th><th>Cliente</th><th>Total</th></tr></thead><tbody>
+      {% for v in vendas %}<tr><td>{{v.data|brdate}}</td><td>{{v.cliente_nome}}</td><td>{{v.total|money}}</td></tr>{% else %}<tr><td colspan="3">Sem vendas.</td></tr>{% endfor %}
+    </tbody></table>
+  </div>
+</div>
+{% endblock %}
