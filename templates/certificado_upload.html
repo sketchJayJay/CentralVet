@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="hero">
+  <span class="badge">Certificado A1</span>
+  <h1>Enviar certificado digital</h1>
+  <p>Envie o arquivo .pfx ou .p12 da CENTRALVET para a pasta segura do servidor.</p>
+  <div class="actions">
+    <a class="btn secondary" href="{{ url_for('fiscal') }}">Voltar para Fiscal</a>
+  </div>
+</section>
+
+<div class="grid">
+  <div class="card metric"><div class="label">Certificado</div><div class="value {{ 'green' if status.exists else 'warn' }}">{{ 'Encontrado' if status.exists else 'Pendente' }}</div></div>
+  <div class="card metric"><div class="label">Senha no Coolify</div><div class="value {{ 'green' if status.has_password else 'warn' }}">{{ 'OK' if status.has_password else 'Falta' }}</div></div>
+  <div class="card metric"><div class="label">Tamanho</div><div class="value">{{ (status.size / 1024)|round(1) if status.size else 0 }} KB</div></div>
+  <div class="card metric"><div class="label">Atualizado</div><div class="value">{{ status.updated or '-' }}</div></div>
+</div>
+
+<div class="card dark">
+  <h2>Enviar arquivo do certificado</h2>
+  <p style="color:#b9d7ee;margin-top:0">Aqui vai somente o arquivo A1. A senha continua nas variáveis do Coolify, para não ficar gravada no sistema.</p>
+  <form method="post" enctype="multipart/form-data">
+    <div class="row">
+      <div>
+        <label>Arquivo .pfx ou .p12</label>
+        <input type="file" name="certificado" accept=".pfx,.p12" required>
+      </div>
+      <div>
+        <label>Caminho onde será salvo</label>
+        <input readonly value="{{ status.path }}">
+      </div>
+      <div>
+        <label>Pasta do certificado</label>
+        <input readonly value="{{ status.dir }}">
+      </div>
+      <div>
+        <label>Senha</label>
+        <input readonly value="{{ 'configurada no Coolify' if status.has_password else 'falta configurar CERTIFICADO_SENHA' }}">
+      </div>
+    </div>
+    <button class="green" style="margin-top:14px">Salvar certificado no servidor</button>
+  </form>
+</div>
+
+<div class="card">
+  <h2>Conferência rápida</h2>
+  <p>Depois de enviar, volte para a tela <b>Fiscal NF-e/NFC-e</b>. O card “Certificado no servidor” deve aparecer como <b>Encontrado</b>.</p>
+  <p><b>Importante:</b> não envie esse arquivo em grupo e não coloque dentro do ZIP do sistema.</p>
+</div>
+{% endblock %}

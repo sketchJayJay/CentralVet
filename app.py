@@ -16,6 +16,7 @@ BACKUP_DIR = os.path.join(DATA_DIR, "backups")
 os.makedirs(BACKUP_DIR, exist_ok=True)
 
 app = Flask(__name__)
+app.config["MAX_CONTENT_LENGTH"] = 8 * 1024 * 1024
 app.secret_key = os.environ.get("SECRET_KEY", "centralvet-veltrix-2026")
 ADMIN_USER = os.environ.get("ADMIN_USER", "admin")
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "1234")
@@ -836,6 +837,56 @@ def fiscal():
         "UF_EMPRESA": os.environ.get("UF_EMPRESA", "MG"),
     }
     return render_template("fiscal.html", cfg=cfg, notas=notas, xmls=xmls, cert_status=cert_status, envs=envs)
+
+@app.route("/fiscal/certificado", methods=["GET", "POST"])
+@login_required
+def enviar_certificado():
+    cfg = fetch_one("SELECT * FROM fiscal_config WHERE id=1")
+    env_path = os.environ.get("CERTIFICADO_PATH", "").strip()
+    cfg_path = cfg["certificado_path"] if cfg and cfg["certificado_path"] else ""
+    cert_path = env_path or cfg_path or "/app/certs/centralvet_a1.pfx"
+    if not cert_path.lower().endswith((".pfx", ".p12")):
+        cert_path = os.path.join(cert_path, "centralvet_a1.pfx")
+    cert_path = os.path.abspath(cert_path)
+    cert_dir = os.path.dirname(cert_path)
+    status = {
+        "path": cert_path,
+        "dir": cert_dir,
+        "exists": os.path.exists(cert_path),
+        "has_password": bool(os.environ.get("CERTIFICADO_SENHA", "").strip()),
+        "size": os.path.getsize(cert_path) if os.path.exists(cert_path) else 0,
+        "updated": datetime.fromtimestamp(os.path.getmtime(cert_path)).strftime("%d/%m/%Y %H:%M") if os.path.exists(cert_path) else ""
+    }
+    if request.method == "POST":
+        arq = request.files.get("certificado")
+        if not arq or not arq.filename:
+            flash("Selecione o arquivo do certificado A1 (.pfx ou .p12).", "erro")
+            return redirect(url_for("enviar_certificado"))
+        filename = arq.filename.lower().strip()
+        if not filename.endswith((".pfx", ".p12")):
+            flash("Arquivo inválido. Envie somente certificado A1 com final .pfx ou .p12.", "erro")
+            return redirect(url_for("enviar_certificado"))
+        try:
+            os.makedirs(cert_dir, exist_ok=True)
+            tmp_path = cert_path + ".tmp"
+            arq.save(tmp_path)
+            if os.path.getsize(tmp_path) <= 0:
+                os.remove(tmp_path)
+                flash("O arquivo enviado veio vazio. Tente enviar novamente.", "erro")
+                return redirect(url_for("enviar_certificado"))
+            os.replace(tmp_path, cert_path)
+            try:
+                os.chmod(cert_path, 0o600)
+            except Exception:
+                pass
+            exec_sql("UPDATE fiscal_config SET certificado_path=?, certificado_nome=? WHERE id=1", (cert_path, arq.filename))
+            backup_db("certificado-config")
+            flash("Certificado A1 salvo com segurança no servidor.", "ok")
+            return redirect(url_for("fiscal"))
+        except Exception as e:
+            flash(f"Não consegui salvar o certificado em {cert_path}. Detalhe: {e}", "erro")
+            return redirect(url_for("enviar_certificado"))
+    return render_template("certificado_upload.html", status=status, cfg=cfg)
 
 @app.route("/xml/importar", methods=["GET", "POST"])
 @login_required
