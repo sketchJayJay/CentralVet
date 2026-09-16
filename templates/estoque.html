@@ -1,7 +1,7 @@
 
 {% extends "base.html" %}
 {% block content %}
-<section class="hero"><span class="badge">Estoque</span><h1>Entrada e saída de mercadorias</h1><p>Movimente estoque manualmente quando comprar, ajustar ou corrigir produtos.</p></section>
+<section class="hero"><span class="badge">Estoque</span><h1>Entrada e saída de mercadorias</h1><p>Movimente estoque manualmente ou importe o XML da nota de compra para fazer isso automático.</p><div class="actions"><a class="btn green" href="{{ url_for('importar_xml') }}">Importar XML da nota</a></div></section>
 <div class="card">
   <h2>Nova movimentação</h2>
   <form method="post">
@@ -19,10 +19,10 @@
 </div>
 <div class="card">
 <h2>Histórico de movimentações</h2>
-<table><thead><tr><th>Data</th><th>Produto</th><th>Tipo</th><th>Qtd</th><th>Valor</th><th>Obs.</th></tr></thead><tbody>
+<div class="table-wrap"><table><thead><tr><th>Data</th><th>Produto</th><th>Tipo</th><th>Qtd</th><th>Valor</th><th>Obs.</th></tr></thead><tbody>
 {% for m in movs %}
 <tr><td>{{m.data|brdate}}</td><td>{{m.produto_nome}}</td><td>{{m.tipo}}</td><td>{{m.quantidade|num}}</td><td>{{m.valor_total|money}}</td><td>{{m.observacao}}</td></tr>
 {% else %}<tr><td colspan="6">Sem movimentações.</td></tr>{% endfor %}
-</tbody></table>
+</tbody></table></div>
 </div>
 {% endblock %}

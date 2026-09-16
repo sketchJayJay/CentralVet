@@ -2,6 +2,8 @@
 import os
 import sqlite3
 import shutil
+import hashlib
+import xml.etree.ElementTree as ET
 from datetime import datetime, date
 from functools import wraps
 from flask import Flask, render_template, request, redirect, url_for, flash, session, send_file, jsonify
@@ -120,6 +122,94 @@ def add_column(db, table, column, ddl):
     if column not in cols:
         db.execute(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}")
 
+
+def xml_local(tag):
+    return tag.split('}', 1)[-1] if '}' in tag else tag
+
+def xml_first_text(node, name, default=""):
+    if node is None:
+        return default
+    for child in node.iter():
+        if xml_local(child.tag) == name:
+            return (child.text or "").strip()
+    return default
+
+def xml_first(node, name):
+    if node is None:
+        return None
+    for child in node.iter():
+        if xml_local(child.tag) == name:
+            return child
+    return None
+
+def xml_all(root, name):
+    return [child for child in root.iter() if xml_local(child.tag) == name]
+
+def only_digits(v):
+    return ''.join(ch for ch in str(v or '') if ch.isdigit())
+
+def xml_float(v):
+    try:
+        return float(str(v or '0').replace(',', '.'))
+    except Exception:
+        return 0.0
+
+def get_product_tax(det):
+    for key in ["CSOSN", "CST"]:
+        val = xml_first_text(det, key, "")
+        if val:
+            return val
+    return ""
+
+def parse_nfe_xml(xml_bytes):
+    """Extrai os principais dados de XML NF-e/NFC-e de entrada."""
+    root = ET.fromstring(xml_bytes)
+    inf = xml_first(root, "infNFe")
+    chave = ""
+    if inf is not None:
+        chave = (inf.attrib.get("Id") or "").replace("NFe", "").strip()
+    ide = xml_first(root, "ide")
+    emit = xml_first(root, "emit")
+    total_node = xml_first(root, "ICMSTot")
+    fornecedor_nome = xml_first_text(emit, "xNome") or xml_first_text(emit, "xFant")
+    fornecedor_cnpj = xml_first_text(emit, "CNPJ") or xml_first_text(emit, "CPF")
+    dados = {
+        "chave": chave,
+        "numero": xml_first_text(ide, "nNF"),
+        "serie": xml_first_text(ide, "serie"),
+        "emissao": (xml_first_text(ide, "dhEmi") or xml_first_text(ide, "dEmi"))[:10],
+        "fornecedor_nome": fornecedor_nome,
+        "fornecedor_cnpj": fornecedor_cnpj,
+        "total": xml_float(xml_first_text(total_node, "vNF")),
+        "itens": []
+    }
+    for det in xml_all(root, "det"):
+        prod = xml_first(det, "prod")
+        if prod is None:
+            continue
+        item = {
+            "codigo": xml_first_text(prod, "cProd"),
+            "ean": xml_first_text(prod, "cEAN") or xml_first_text(prod, "cEANTrib"),
+            "nome": xml_first_text(prod, "xProd"),
+            "ncm": xml_first_text(prod, "NCM"),
+            "cest": xml_first_text(prod, "CEST"),
+            "cfop": xml_first_text(prod, "CFOP"),
+            "unidade": xml_first_text(prod, "uCom") or xml_first_text(prod, "uTrib") or "UN",
+            "quantidade": xml_float(xml_first_text(prod, "qCom") or xml_first_text(prod, "qTrib")),
+            "valor_unitario": xml_float(xml_first_text(prod, "vUnCom") or xml_first_text(prod, "vUnTrib")),
+            "valor_total": xml_float(xml_first_text(prod, "vProd")),
+            "cst_csosn": get_product_tax(det)
+        }
+        if item["nome"]:
+            dados["itens"].append(item)
+    return dados
+
+def cert_runtime_status():
+    path = os.environ.get("CERTIFICADO_PATH", "").strip()
+    has_pass = bool(os.environ.get("CERTIFICADO_SENHA", "").strip())
+    exists = bool(path and os.path.exists(path))
+    return {"path": path, "has_password": has_pass, "exists": exists}
+
 def init_db():
     with get_db() as db:
         db.executescript("""
@@ -231,15 +321,50 @@ def init_db():
             regime TEXT,
             ambiente TEXT DEFAULT 'Homologação',
             certificado_nome TEXT,
+            certificado_path TEXT,
+            certificado_senha_env TEXT,
+            nf_serie TEXT,
+            nf_numero_inicial TEXT,
+            nfce_serie TEXT,
+            nfce_numero_inicial TEXT,
+            csc_id TEXT,
+            csc_token TEXT,
+            cfop_padrao TEXT,
+            cst_csosn_padrao TEXT,
             observacao TEXT
+        );
+        CREATE TABLE IF NOT EXISTS xml_imports (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            chave TEXT UNIQUE,
+            xml_hash TEXT UNIQUE,
+            numero TEXT,
+            serie TEXT,
+            emissao TEXT,
+            fornecedor_nome TEXT,
+            fornecedor_cnpj TEXT,
+            total REAL DEFAULT 0,
+            itens_qtd INTEGER DEFAULT 0,
+            observacao TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
         );
         """)
         # default fiscal config
         db.execute("""
             INSERT OR IGNORE INTO fiscal_config
-            (id, razao_social, nome_fantasia, cnpj, ambiente)
-            VALUES (1, 'CENTRALVET AGROPECUÁRIA', 'CENTRALVET agropecuária', '68.690.225/0001-50', 'Homologação')
+            (id, razao_social, nome_fantasia, cnpj, ambiente, uf, municipio, certificado_path, certificado_senha_env)
+            VALUES (1, 'CENTRALVET AGROPECUÁRIA LTDA', 'CENTRALVET AGROPECUÁRIA', '68.690.225/0001-50', 'Homologação', 'MG', '', '/app/certs/centralvet_a1.pfx', 'CERTIFICADO_SENHA')
         """)
+        for column, ddl in [
+            ('ean', 'TEXT'), ('cest', 'TEXT'), ('ultima_chave_xml', 'TEXT'), ('fornecedor_id', 'INTEGER')
+        ]:
+            add_column(db, 'produtos', column, ddl)
+        for column, ddl in [
+            ('certificado_path', 'TEXT'), ('certificado_senha_env', 'TEXT'), ('nf_serie', 'TEXT'), ('nf_numero_inicial', 'TEXT'),
+            ('nfce_serie', 'TEXT'), ('nfce_numero_inicial', 'TEXT'), ('csc_id', 'TEXT'), ('csc_token', 'TEXT'),
+            ('cfop_padrao', 'TEXT'), ('cst_csosn_padrao', 'TEXT')
+        ]:
+            add_column(db, 'fiscal_config', column, ddl)
+        db.execute("UPDATE fiscal_config SET certificado_path=COALESCE(NULLIF(certificado_path,''), '/app/certs/centralvet_a1.pfx'), certificado_senha_env=COALESCE(NULLIF(certificado_senha_env,''), 'CERTIFICADO_SENHA') WHERE id=1")
         db.commit()
 
 init_db()
@@ -402,8 +527,8 @@ def produtos():
         with get_db() as db:
             db.execute("""
                 INSERT INTO produtos
-                (codigo,nome,categoria,unidade,preco_custo,preco_venda,estoque,estoque_minimo,ncm,cfop,cst_csosn,aliquota)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+                (codigo,nome,categoria,unidade,preco_custo,preco_venda,estoque,estoque_minimo,ncm,cfop,cst_csosn,aliquota,ean,cest)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             """, (
                 request.form.get("codigo","").strip(),
                 request.form.get("nome","").strip(),
@@ -417,6 +542,8 @@ def produtos():
                 request.form.get("cfop","").strip(),
                 request.form.get("cst_csosn","").strip(),
                 money_to_float(request.form.get("aliquota")),
+                request.form.get("ean","").strip(),
+                request.form.get("cest","").strip(),
             ))
             db.commit()
         backup_db("produto")
@@ -439,7 +566,7 @@ def editar_produto(item_id):
     if request.method == "POST":
         exec_sql("""
             UPDATE produtos SET codigo=?, nome=?, categoria=?, unidade=?, preco_custo=?, preco_venda=?,
-            estoque=?, estoque_minimo=?, ncm=?, cfop=?, cst_csosn=?, aliquota=? WHERE id=?
+            estoque=?, estoque_minimo=?, ncm=?, cfop=?, cst_csosn=?, aliquota=?, ean=?, cest=? WHERE id=?
         """, (
             request.form.get("codigo","").strip(),
             request.form.get("nome","").strip(),
@@ -453,6 +580,8 @@ def editar_produto(item_id):
             request.form.get("cfop","").strip(),
             request.form.get("cst_csosn","").strip(),
             money_to_float(request.form.get("aliquota")),
+            request.form.get("ean","").strip(),
+            request.form.get("cest","").strip(),
             item_id
         ))
         backup_db("produto-editado")
@@ -671,7 +800,7 @@ def financeiro_excluir(item_id):
     return redirect(url_for("financeiro"))
 
 
-# ---------------- Fiscal ----------------
+# ---------------- Fiscal / XML ----------------
 
 @app.route("/fiscal", methods=["GET","POST"])
 @login_required
@@ -679,21 +808,126 @@ def fiscal():
     if request.method == "POST":
         exec_sql("""
             UPDATE fiscal_config SET razao_social=?, nome_fantasia=?, cnpj=?, inscricao_estadual=?,
-            endereco=?, municipio=?, uf=?, cep=?, telefone=?, email=?, regime=?, ambiente=?, certificado_nome=?, observacao=?
+            endereco=?, municipio=?, uf=?, cep=?, telefone=?, email=?, regime=?, ambiente=?, certificado_nome=?,
+            certificado_path=?, certificado_senha_env=?, nf_serie=?, nf_numero_inicial=?, nfce_serie=?, nfce_numero_inicial=?,
+            csc_id=?, csc_token=?, cfop_padrao=?, cst_csosn_padrao=?, observacao=?
             WHERE id=1
         """, (
             request.form.get("razao_social",""), request.form.get("nome_fantasia",""), request.form.get("cnpj",""),
             request.form.get("inscricao_estadual",""), request.form.get("endereco",""), request.form.get("municipio",""),
             request.form.get("uf",""), request.form.get("cep",""), request.form.get("telefone",""), request.form.get("email",""),
             request.form.get("regime",""), request.form.get("ambiente","Homologação"), request.form.get("certificado_nome",""),
-            request.form.get("observacao","")
+            request.form.get("certificado_path",""), request.form.get("certificado_senha_env","CERTIFICADO_SENHA"),
+            request.form.get("nf_serie",""), request.form.get("nf_numero_inicial",""), request.form.get("nfce_serie",""),
+            request.form.get("nfce_numero_inicial",""), request.form.get("csc_id",""), request.form.get("csc_token",""),
+            request.form.get("cfop_padrao",""), request.form.get("cst_csosn_padrao",""), request.form.get("observacao","")
         ))
         backup_db("fiscal-config")
         flash("Configuração fiscal salva.", "ok")
         return redirect(url_for("fiscal"))
     cfg = fetch_one("SELECT * FROM fiscal_config WHERE id=1")
     notas = fetch_all("SELECT * FROM vendas WHERE nf_status!='Não emitida' ORDER BY id DESC LIMIT 80")
-    return render_template("fiscal.html", cfg=cfg, notas=notas)
+    xmls = fetch_all("SELECT * FROM xml_imports ORDER BY id DESC LIMIT 10")
+    cert_status = cert_runtime_status()
+    envs = {
+        "CERTIFICADO_PATH": os.environ.get("CERTIFICADO_PATH", ""),
+        "CERTIFICADO_SENHA": "configurada" if os.environ.get("CERTIFICADO_SENHA") else "não configurada",
+        "AMBIENTE_FISCAL": os.environ.get("AMBIENTE_FISCAL", "homologacao"),
+        "UF_EMPRESA": os.environ.get("UF_EMPRESA", "MG"),
+    }
+    return render_template("fiscal.html", cfg=cfg, notas=notas, xmls=xmls, cert_status=cert_status, envs=envs)
+
+@app.route("/xml/importar", methods=["GET", "POST"])
+@login_required
+def importar_xml():
+    preview = None
+    if request.method == "POST":
+        arq = request.files.get("xml_file")
+        aplicar_margem = request.form.get("aplicar_margem") == "1"
+        margem = money_to_float(request.form.get("margem_lucro"))
+        if not arq or not arq.filename:
+            flash("Selecione o XML da nota de entrada.", "erro")
+            return redirect(url_for("importar_xml"))
+        xml_bytes = arq.read()
+        xml_hash = hashlib.sha256(xml_bytes).hexdigest()
+        try:
+            dados = parse_nfe_xml(xml_bytes)
+        except Exception as e:
+            flash(f"Não consegui ler esse XML. Verifique se é o XML completo da NF-e. Detalhe: {e}", "erro")
+            return redirect(url_for("importar_xml"))
+        if not dados["itens"]:
+            flash("XML lido, mas não encontrei produtos dentro da nota.", "erro")
+            return redirect(url_for("importar_xml"))
+        chave_unica = dados["chave"] or xml_hash
+        ja = fetch_one("SELECT * FROM xml_imports WHERE chave=? OR xml_hash=?", (chave_unica, xml_hash))
+        if ja:
+            flash(f"Essa nota/XML já foi importada antes. Registro #{ja['id']}.", "erro")
+            return redirect(url_for("importar_xml"))
+        with get_db() as db:
+            fornecedor_id = None
+            if dados["fornecedor_nome"] or dados["fornecedor_cnpj"]:
+                cnpj_digits = only_digits(dados["fornecedor_cnpj"])
+                fornecedor = None
+                if cnpj_digits:
+                    fornecedor = db.execute("SELECT * FROM fornecedores WHERE cpf_cnpj LIKE ? LIMIT 1", (f"%{cnpj_digits[-8:]}%",)).fetchone()
+                if not fornecedor and dados["fornecedor_nome"]:
+                    fornecedor = db.execute("SELECT * FROM fornecedores WHERE nome LIKE ? LIMIT 1", (dados["fornecedor_nome"],)).fetchone()
+                if fornecedor:
+                    fornecedor_id = fornecedor["id"]
+                else:
+                    cur = db.execute("INSERT INTO fornecedores (nome, cpf_cnpj, observacao) VALUES (?, ?, ?)",
+                                     (dados["fornecedor_nome"] or "Fornecedor do XML", dados["fornecedor_cnpj"], "Cadastrado automaticamente pela importação de XML."))
+                    fornecedor_id = cur.lastrowid
+            novos = atualizados = 0
+            data_mov = dados["emissao"] or today_str()
+            origem = f"XML NF-e {dados['numero'] or ''}".strip()
+            for item in dados["itens"]:
+                prod = None
+                if item["codigo"]:
+                    prod = db.execute("SELECT * FROM produtos WHERE ativo=1 AND codigo=? LIMIT 1", (item["codigo"],)).fetchone()
+                if not prod and item["ean"]:
+                    prod = db.execute("SELECT * FROM produtos WHERE ativo=1 AND ean=? LIMIT 1", (item["ean"],)).fetchone()
+                if not prod:
+                    prod = db.execute("SELECT * FROM produtos WHERE ativo=1 AND nome=? LIMIT 1", (item["nome"],)).fetchone()
+                qtd = item["quantidade"]
+                custo = item["valor_unitario"] or (item["valor_total"] / qtd if qtd else 0)
+                if prod:
+                    produto_id = prod["id"]
+                    novo_preco_venda = prod["preco_venda"] or 0
+                    if aplicar_margem and margem > 0:
+                        novo_preco_venda = custo * (1 + margem / 100.0)
+                    db.execute("""
+                        UPDATE produtos SET nome=?, unidade=?, preco_custo=?, preco_venda=?, estoque=estoque+?,
+                        ncm=?, cfop=?, cst_csosn=?, ean=?, cest=?, ultima_chave_xml=?, fornecedor_id=?
+                        WHERE id=?
+                    """, (item["nome"], item["unidade"], custo, novo_preco_venda, qtd, item["ncm"], item["cfop"],
+                          item["cst_csosn"], item["ean"], item["cest"], chave_unica, fornecedor_id, produto_id))
+                    atualizados += 1
+                else:
+                    preco_venda = custo * (1 + margem / 100.0) if aplicar_margem and margem > 0 else 0
+                    cur = db.execute("""
+                        INSERT INTO produtos (codigo,nome,categoria,unidade,preco_custo,preco_venda,estoque,estoque_minimo,ncm,cfop,cst_csosn,ean,cest,ultima_chave_xml,fornecedor_id)
+                        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                    """, (item["codigo"], item["nome"], "Importado XML", item["unidade"] or "UN", custo, preco_venda, qtd, 0,
+                          item["ncm"], item["cfop"], item["cst_csosn"], item["ean"], item["cest"], chave_unica, fornecedor_id))
+                    produto_id = cur.lastrowid
+                    novos += 1
+                db.execute("""
+                    INSERT INTO estoque_mov (data, produto_id, tipo, quantidade, custo_unit, valor_total, origem, observacao)
+                    VALUES (?, ?, 'Entrada', ?, ?, ?, ?, ?)
+                """, (data_mov, produto_id, qtd, custo, item["valor_total"] or qtd*custo, origem, f"Importado pelo XML. Chave: {dados['chave'] or 'sem chave'}"))
+            db.execute("""
+                INSERT INTO xml_imports (chave, xml_hash, numero, serie, emissao, fornecedor_nome, fornecedor_cnpj, total, itens_qtd, observacao)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (chave_unica, xml_hash, dados["numero"], dados["serie"], dados["emissao"], dados["fornecedor_nome"], dados["fornecedor_cnpj"],
+                  dados["total"], len(dados["itens"]), f"{novos} novo(s), {atualizados} atualizado(s)."))
+            db.commit()
+        backup_db("xml-importado")
+        flash(f"XML importado: {novos} produto(s) novo(s), {atualizados} atualizado(s), estoque lançado automaticamente.", "ok")
+        return redirect(url_for("produtos"))
+    ultimos = fetch_all("SELECT * FROM xml_imports ORDER BY id DESC LIMIT 20")
+    cfg = fetch_one("SELECT * FROM fiscal_config WHERE id=1")
+    return render_template("importar_xml.html", ultimos=ultimos, cfg=cfg)
 
 
 # ---------------- Relatórios / Backup ----------------

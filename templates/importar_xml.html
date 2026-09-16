@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="hero">
+  <span class="badge">XML de entrada</span>
+  <h1>Importar nota de compra</h1>
+  <p>Envie o XML da NF-e de entrada para cadastrar produtos, atualizar custo e somar estoque automaticamente.</p>
+</section>
+
+<div class="card dark">
+  <h2>O que essa tela faz</h2>
+  <p style="color:#b9d7ee">Quando a CENTRALVET comprar mercadoria, basta importar o XML da nota. O sistema lê fornecedor, produtos, NCM, CFOP, CST/CSOSN, unidade, quantidade e valor de compra. Produto novo entra cadastrado. Produto já existente recebe entrada no estoque.</p>
+</div>
+
+<div class="card">
+  <h2>Importar XML</h2>
+  <form method="post" enctype="multipart/form-data">
+    <div class="row">
+      <div style="grid-column:span 2"><label>Arquivo XML da NF-e</label><input type="file" name="xml_file" accept=".xml,text/xml" required></div>
+      <div><label>Aplicar margem automática?</label><select name="aplicar_margem"><option value="0">Não, ajustar venda depois</option><option value="1">Sim</option></select></div>
+      <div><label>Margem de lucro %</label><input name="margem_lucro" placeholder="Ex.: 35"></div>
+    </div>
+    <button class="green">Importar produtos e estoque</button>
+    <a class="btn secondary" href="{{ url_for('produtos') }}">Ver produtos</a>
+  </form>
+</div>
+
+<div class="card">
+  <h2>Últimas importações</h2>
+  <div class="table-wrap">
+  <table><thead><tr><th>Data importação</th><th>NF</th><th>Série</th><th>Emissão</th><th>Fornecedor</th><th>Itens</th><th>Total</th><th>Obs.</th></tr></thead><tbody>
+  {% for x in ultimos %}
+    <tr>
+      <td>{{ x.created_at }}</td><td>{{ x.numero or '-' }}</td><td>{{ x.serie or '-' }}</td><td>{{ x.emissao|brdate }}</td>
+      <td>{{ x.fornecedor_nome or '-' }}<br><small>{{ x.fornecedor_cnpj or '' }}</small></td><td>{{ x.itens_qtd }}</td><td>{{ x.total|money }}</td><td>{{ x.observacao }}</td>
+    </tr>
+  {% else %}<tr><td colspan="8">Nenhum XML importado ainda.</td></tr>{% endfor %}
+  </tbody></table>
+  </div>
+</div>
+{% endblock %}

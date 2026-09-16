@@ -32,6 +32,7 @@
       <a href="{{ url_for('vendas') }}">Vendas</a>
       <a href="{{ url_for('produtos') }}">Produtos</a>
       <a href="{{ url_for('estoque') }}">Estoque</a>
+      <a href="{{ url_for('importar_xml') }}">Importar XML</a>
       <a href="{{ url_for('clientes') }}">Clientes</a>
       <a href="{{ url_for('fornecedores') }}">Fornecedores</a>
       <a href="{{ url_for('financeiro') }}">Financeiro</a>
@@ -54,7 +55,7 @@
   <a href="{{ url_for('index') }}">Painel</a>
   <a href="{{ url_for('nova_venda') }}">Venda</a>
   <a href="{{ url_for('produtos') }}">Produtos</a>
-  <a href="{{ url_for('financeiro') }}">Caixa</a>
+  <a href="{{ url_for('importar_xml') }}">XML</a>
 </nav>
 {% else %}
   {% block auth %}{% endblock %}

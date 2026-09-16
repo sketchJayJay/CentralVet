@@ -1,38 +1,84 @@
-
 {% extends "base.html" %}
 {% block content %}
 <section class="hero">
   <span class="badge">Fiscal</span><h1>Configuração fiscal NF-e / NFC-e</h1>
-  <p>Base preparada para emissão. A autorização real depende do certificado digital, credenciais e validação com contador.</p>
+  <p>Dados da CENTRALVET, certificado A1, séries, CSC/Token e preparação para homologação.</p>
+  <div class="actions">
+    <a class="btn green" href="{{ url_for('importar_xml') }}">Importar XML de compra</a>
+    <a class="btn secondary" href="{{ url_for('nova_venda') }}">Nova venda</a>
+  </div>
 </section>
+
+<div class="grid">
+  <div class="card metric"><div class="label">Ambiente</div><div class="value">{{ cfg.ambiente or 'Homologação' }}</div></div>
+  <div class="card metric"><div class="label">Certificado no servidor</div><div class="value {{ 'green' if cert_status.exists else 'warn' }}">{{ 'Encontrado' if cert_status.exists else 'Pendente' }}</div></div>
+  <div class="card metric"><div class="label">Senha no Coolify</div><div class="value {{ 'green' if cert_status.has_password else 'warn' }}">{{ 'OK' if cert_status.has_password else 'Falta' }}</div></div>
+  <div class="card metric"><div class="label">XMLs importados</div><div class="value green">{{ xmls|length }}</div></div>
+</div>
+
+<div class="card dark">
+  <h2>Como guardar o certificado com segurança</h2>
+  <p style="color:#b9d7ee;margin-top:0">Não coloque o certificado nem a senha dentro do ZIP do sistema. O arquivo fica em uma pasta privada do servidor e a senha fica nas variáveis do Coolify.</p>
+  <div class="row">
+    <div><label>Variável CERTIFICADO_PATH</label><input readonly value="{{ envs.CERTIFICADO_PATH or cfg.certificado_path or '/app/certs/centralvet_a1.pfx' }}"></div>
+    <div><label>Variável CERTIFICADO_SENHA</label><input readonly value="{{ envs.CERTIFICADO_SENHA }}"></div>
+    <div><label>AMBIENTE_FISCAL</label><input readonly value="{{ envs.AMBIENTE_FISCAL }}"></div>
+    <div><label>UF_EMPRESA</label><input readonly value="{{ envs.UF_EMPRESA }}"></div>
+  </div>
+</div>
+
 <div class="card">
 <h2>Dados da empresa</h2>
 <form method="post">
   <div class="row">
-    <div><label>Razão social</label><input name="razao_social" value="{{cfg.razao_social}}"></div>
-    <div><label>Nome fantasia</label><input name="nome_fantasia" value="{{cfg.nome_fantasia}}"></div>
-    <div><label>CNPJ</label><input name="cnpj" value="{{cfg.cnpj}}"></div>
-    <div><label>Inscrição estadual</label><input name="inscricao_estadual" value="{{cfg.inscricao_estadual}}"></div>
-    <div><label>Endereço</label><input name="endereco" value="{{cfg.endereco}}"></div>
-    <div><label>Município</label><input name="municipio" value="{{cfg.municipio}}"></div>
-    <div><label>UF</label><input name="uf" value="{{cfg.uf}}"></div>
-    <div><label>CEP</label><input name="cep" value="{{cfg.cep}}"></div>
-    <div><label>Telefone</label><input name="telefone" value="{{cfg.telefone}}"></div>
-    <div><label>E-mail</label><input name="email" value="{{cfg.email}}"></div>
-    <div><label>Regime tributário</label><input name="regime" value="{{cfg.regime}}" placeholder="Simples Nacional, etc."></div>
+    <div><label>Razão social</label><input name="razao_social" value="{{cfg.razao_social or ''}}"></div>
+    <div><label>Nome fantasia</label><input name="nome_fantasia" value="{{cfg.nome_fantasia or ''}}"></div>
+    <div><label>CNPJ</label><input name="cnpj" value="{{cfg.cnpj or ''}}"></div>
+    <div><label>Inscrição estadual</label><input name="inscricao_estadual" value="{{cfg.inscricao_estadual or ''}}"></div>
+    <div><label>Endereço</label><input name="endereco" value="{{cfg.endereco or ''}}"></div>
+    <div><label>Município</label><input name="municipio" value="{{cfg.municipio or ''}}"></div>
+    <div><label>UF</label><input name="uf" value="{{cfg.uf or 'MG'}}"></div>
+    <div><label>CEP</label><input name="cep" value="{{cfg.cep or ''}}"></div>
+    <div><label>Telefone</label><input name="telefone" value="{{cfg.telefone or ''}}"></div>
+    <div><label>E-mail</label><input name="email" value="{{cfg.email or ''}}"></div>
+    <div><label>Regime tributário</label><input name="regime" value="{{cfg.regime or ''}}" placeholder="Simples Nacional, Lucro Presumido..."></div>
     <div><label>Ambiente</label><select name="ambiente"><option {{'selected' if cfg.ambiente=='Homologação' else ''}}>Homologação</option><option {{'selected' if cfg.ambiente=='Produção' else ''}}>Produção</option></select></div>
-    <div><label>Certificado</label><input name="certificado_nome" value="{{cfg.certificado_nome}}" placeholder="Nome/validade do certificado"></div>
-    <div style="grid-column:span 3"><label>Observação fiscal</label><input name="observacao" value="{{cfg.observacao}}"></div>
   </div>
-  <button class="green">Salvar configuração</button>
+
+  <h2 style="margin-top:20px">Certificado e numeração</h2>
+  <div class="row">
+    <div><label>Nome/validade certificado</label><input name="certificado_nome" value="{{cfg.certificado_nome or ''}}" placeholder="A1 CENTRALVET válido até..."></div>
+    <div><label>Caminho do certificado</label><input name="certificado_path" value="{{cfg.certificado_path or '/app/certs/centralvet_a1.pfx'}}"></div>
+    <div><label>Nome da variável da senha</label><input name="certificado_senha_env" value="{{cfg.certificado_senha_env or 'CERTIFICADO_SENHA'}}"></div>
+    <div><label>CFOP padrão</label><input name="cfop_padrao" value="{{cfg.cfop_padrao or ''}}"></div>
+    <div><label>Série NF-e</label><input name="nf_serie" value="{{cfg.nf_serie or ''}}"></div>
+    <div><label>Número inicial NF-e</label><input name="nf_numero_inicial" value="{{cfg.nf_numero_inicial or ''}}"></div>
+    <div><label>Série NFC-e</label><input name="nfce_serie" value="{{cfg.nfce_serie or ''}}"></div>
+    <div><label>Número inicial NFC-e</label><input name="nfce_numero_inicial" value="{{cfg.nfce_numero_inicial or ''}}"></div>
+    <div><label>ID CSC</label><input name="csc_id" value="{{cfg.csc_id or ''}}"></div>
+    <div><label>CSC/Token NFC-e</label><input name="csc_token" value="{{cfg.csc_token or ''}}"></div>
+    <div><label>CST/CSOSN padrão</label><input name="cst_csosn_padrao" value="{{cfg.cst_csosn_padrao or ''}}"></div>
+    <div><label>Observação fiscal</label><input name="observacao" value="{{cfg.observacao or ''}}"></div>
+  </div>
+  <button class="green">Salvar configuração fiscal</button>
 </form>
 </div>
-<div class="card">
-<h2>Pré-notas / documentos preparados</h2>
-<table><thead><tr><th>Venda</th><th>Data</th><th>Cliente</th><th>Tipo</th><th>Status</th><th>Total</th></tr></thead><tbody>
-{% for n in notas %}
-<tr><td>#{{n.id}}</td><td>{{n.data|brdate}}</td><td>{{n.cliente_nome}}</td><td>{{n.nf_tipo}}</td><td>{{n.nf_status}} {{n.nf_numero or ''}}</td><td>{{n.total|money}}</td></tr>
-{% else %}<tr><td colspan="6">Nenhuma pré-nota gerada.</td></tr>{% endfor %}
-</tbody></table>
+
+<div class="grid2">
+  <div class="card">
+    <h2>Últimos XMLs importados</h2>
+    <div class="table-wrap"><table><thead><tr><th>NF</th><th>Fornecedor</th><th>Itens</th><th>Total</th></tr></thead><tbody>
+      {% for x in xmls %}<tr><td>{{x.numero or '-'}}</td><td>{{x.fornecedor_nome or '-'}}</td><td>{{x.itens_qtd}}</td><td>{{x.total|money}}</td></tr>
+      {% else %}<tr><td colspan="4">Nenhum XML importado ainda.</td></tr>{% endfor %}
+    </tbody></table></div>
+  </div>
+  <div class="card">
+    <h2>Pré-notas / documentos preparados</h2>
+    <div class="table-wrap"><table><thead><tr><th>Venda</th><th>Cliente</th><th>Tipo</th><th>Status</th><th>Total</th></tr></thead><tbody>
+    {% for n in notas %}
+    <tr><td>#{{n.id}}</td><td>{{n.cliente_nome}}</td><td>{{n.nf_tipo}}</td><td>{{n.nf_status}} {{n.nf_numero or ''}}</td><td>{{n.total|money}}</td></tr>
+    {% else %}<tr><td colspan="5">Nenhuma pré-nota gerada.</td></tr>{% endfor %}
+    </tbody></table></div>
+  </div>
 </div>
 {% endblock %}
