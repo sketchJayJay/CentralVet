@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="hero">
+  <span class="badge">Devolução #{{dev.id}}</span>
+  <h1>Rascunho da nota de devolução</h1>
+  <p>Dados puxados do XML da nota original. Valide CFOP/CST/CSOSN com o contador antes da emissão em produção.</p>
+  <div class="actions">
+    <a class="btn secondary" href="{{ url_for('devolucoes') }}">Voltar</a>
+    <a class="btn" href="{{ url_for('nova_devolucao') }}">Nova devolução</a>
+    <button class="secondary" onclick="window.print()">Imprimir resumo</button>
+  </div>
+</section>
+
+<div class="grid">
+  <div class="card metric"><div class="label">Status</div><div class="value {{ 'green' if dev.status=='Emitida' else 'warn' }}">{{dev.status}}</div></div>
+  <div class="card metric"><div class="label">NF origem</div><div class="value">{{dev.numero_origem or '-'}}</div></div>
+  <div class="card metric"><div class="label">Total devolução</div><div class="value green">{{total|money}}</div></div>
+  <div class="card metric"><div class="label">Estoque</div><div class="value {{ 'green' if dev.baixou_estoque else 'warn' }}">{{ 'Baixado' if dev.baixou_estoque else 'Não baixado' }}</div></div>
+</div>
+
+<div class="card">
+  <h2>Dados da nota original</h2>
+  <div class="row">
+    <div style="grid-column:span 2"><label>Fornecedor</label><input readonly value="{{dev.fornecedor_nome or '-'}}"></div>
+    <div><label>CNPJ/CPF</label><input readonly value="{{dev.fornecedor_cnpj or '-'}}"></div>
+    <div><label>Emissão origem</label><input readonly value="{{dev.emissao_origem|brdate}}"></div>
+    <div style="grid-column:span 2"><label>Destinatário</label><input readonly value="{{dev.destinatario_nome or '-'}}"></div>
+    <div><label>CNPJ/CPF destinatário</label><input readonly value="{{dev.destinatario_cnpj or '-'}}"></div>
+    <div><label>Motivo</label><input readonly value="{{dev.motivo}}"></div>
+    <div style="grid-column:span 4"><label>Chave da NF-e original</label><input readonly value="{{dev.chave_origem or '-'}}"></div>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Itens da devolução</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Produto</th><th>Qtd original</th><th>Qtd devolver</th><th>Valor unit.</th><th>Total</th><th>NCM</th><th>CFOP origem</th><th>CFOP devolução</th><th>CST/CSOSN</th></tr></thead>
+      <tbody>
+      {% for i in itens %}
+      <tr>
+        <td><b>{{i.nome}}</b><br><small>Cód: {{i.codigo or '-'}} • EAN: {{i.ean or '-'}}</small></td>
+        <td>{{i.quantidade_original|num}} {{i.unidade}}</td>
+        <td><b>{{i.quantidade_devolver|num}} {{i.unidade}}</b></td>
+        <td>{{i.valor_unitario|money}}</td>
+        <td><b>{{i.valor_total|money}}</b></td>
+        <td>{{i.ncm or '-'}}</td>
+        <td>{{i.cfop_original or '-'}}</td>
+        <td>{{i.cfop_devolucao or 'Confirmar'}}</td>
+        <td>{{i.cst_csosn or '-'}}</td>
+      </tr>
+      {% else %}<tr><td colspan="9">Nenhum item lançado.</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="grid2 hide-print">
+  <div class="card">
+    <h2>Atualizar status</h2>
+    <form method="post" action="{{ url_for('marcar_devolucao_emitida', devolucao_id=dev.id) }}">
+      <div class="row">
+        <div><label>Status</label><select name="status"><option {{'selected' if dev.status=='Rascunho' else ''}}>Rascunho</option><option {{'selected' if dev.status=='Emitida' else ''}}>Emitida</option><option {{'selected' if dev.status=='Emitida pelo contador' else ''}}>Emitida pelo contador</option><option {{'selected' if dev.status=='Cancelada' else ''}}>Cancelada</option></select></div>
+        <div><label>Nº devolução</label><input name="nf_devolucao_numero" value="{{dev.nf_devolucao_numero or ''}}"></div>
+        <div style="grid-column:span 2"><label>Chave da devolução emitida</label><input name="nf_devolucao_chave" value="{{dev.nf_devolucao_chave or ''}}"></div>
+      </div>
+      <button class="green">Salvar status</button>
+    </form>
+  </div>
+  <div class="card dark">
+    <h2>Para enviar ao contador</h2>
+    <p style="color:#b9d7ee">Informe que a devolução foi montada com a chave da NF-e original, produtos, quantidades e motivo de avaria. O contador deve validar CFOP de devolução, CST/CSOSN, impostos e se a emissão será pelo sistema ou pelo emissor dele.</p>
+    {% if dev.status == 'Rascunho' %}
+    <form method="post" action="{{ url_for('excluir_devolucao', devolucao_id=dev.id) }}" onsubmit="return confirm('Excluir esta devolução?')">
+      <button class="danger">Excluir rascunho</button>
+    </form>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

@@ -5,6 +5,6 @@ ENV PYTHONUNBUFFERED=1
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
-RUN mkdir -p /app/data
+RUN mkdir -p /app/data /app/certs
 EXPOSE 8080
 CMD ["gunicorn", "-b", "0.0.0.0:8080", "app:app", "--workers", "2", "--threads", "4", "--timeout", "120"]

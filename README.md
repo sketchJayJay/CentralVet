@@ -67,3 +67,16 @@ Coloque o arquivo A1 em uma pasta/volume privado do servidor, por exemplo:
 ## Fiscal real
 
 Esta versão deixa a estrutura pronta e já resolve a entrada por XML. A autorização real da NF-e/NFC-e precisa ser validada com certificado, CSC/Token, credenciamento, regime tributário, séries, numeração e regras fiscais dos produtos.
+
+
+## Atualização fiscal: Devolução por XML
+
+Esta versão inclui o módulo de devolução de mercadoria:
+
+1. Acesse **Fiscal NF-e/NFC-e > Nota de devolução** ou **Devoluções > Nova devolução**.
+2. Importe o XML da nota fiscal de compra original.
+3. Selecione os produtos avariados e informe as quantidades a devolver.
+4. Gere o rascunho da devolução.
+5. Valide CFOP/CST/CSOSN com o contador antes de emitir em produção.
+
+A tela cria o rascunho vinculado à chave da NF-e original e permite baixar o estoque se necessário.

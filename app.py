@@ -3,6 +3,8 @@ import os
 import sqlite3
 import shutil
 import hashlib
+import base64
+import json
 import xml.etree.ElementTree as ET
 from datetime import datetime, date
 from functools import wraps
@@ -172,6 +174,7 @@ def parse_nfe_xml(xml_bytes):
     ide = xml_first(root, "ide")
     emit = xml_first(root, "emit")
     total_node = xml_first(root, "ICMSTot")
+    dest = xml_first(root, "dest")
     fornecedor_nome = xml_first_text(emit, "xNome") or xml_first_text(emit, "xFant")
     fornecedor_cnpj = xml_first_text(emit, "CNPJ") or xml_first_text(emit, "CPF")
     dados = {
@@ -181,6 +184,10 @@ def parse_nfe_xml(xml_bytes):
         "emissao": (xml_first_text(ide, "dhEmi") or xml_first_text(ide, "dEmi"))[:10],
         "fornecedor_nome": fornecedor_nome,
         "fornecedor_cnpj": fornecedor_cnpj,
+        "destinatario_nome": xml_first_text(dest, "xNome"),
+        "destinatario_cnpj": xml_first_text(dest, "CNPJ") or xml_first_text(dest, "CPF"),
+        "natureza": xml_first_text(ide, "natOp"),
+        "modelo": xml_first_text(ide, "mod"),
         "total": xml_float(xml_first_text(total_node, "vNF")),
         "itens": []
     }
@@ -346,6 +353,46 @@ def init_db():
             total REAL DEFAULT 0,
             itens_qtd INTEGER DEFAULT 0,
             observacao TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS devolucoes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            data TEXT,
+            fornecedor_nome TEXT,
+            fornecedor_cnpj TEXT,
+            destinatario_nome TEXT,
+            destinatario_cnpj TEXT,
+            chave_origem TEXT,
+            numero_origem TEXT,
+            serie_origem TEXT,
+            emissao_origem TEXT,
+            total_original REAL DEFAULT 0,
+            motivo TEXT,
+            status TEXT DEFAULT 'Rascunho',
+            baixou_estoque INTEGER DEFAULT 0,
+            nf_devolucao_numero TEXT,
+            nf_devolucao_chave TEXT,
+            xml_hash TEXT,
+            observacao TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS devolucao_itens (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            devolucao_id INTEGER,
+            produto_id INTEGER,
+            codigo TEXT,
+            ean TEXT,
+            nome TEXT,
+            ncm TEXT,
+            cest TEXT,
+            cfop_original TEXT,
+            cfop_devolucao TEXT,
+            cst_csosn TEXT,
+            unidade TEXT,
+            quantidade_original REAL DEFAULT 0,
+            quantidade_devolver REAL DEFAULT 0,
+            valor_unitario REAL DEFAULT 0,
+            valor_total REAL DEFAULT 0,
             created_at TEXT DEFAULT CURRENT_TIMESTAMP
         );
         """)
@@ -829,6 +876,7 @@ def fiscal():
     cfg = fetch_one("SELECT * FROM fiscal_config WHERE id=1")
     notas = fetch_all("SELECT * FROM vendas WHERE nf_status!='Não emitida' ORDER BY id DESC LIMIT 80")
     xmls = fetch_all("SELECT * FROM xml_imports ORDER BY id DESC LIMIT 10")
+    devolucoes = fetch_all("SELECT * FROM devolucoes ORDER BY id DESC LIMIT 8")
     cert_status = cert_runtime_status()
     envs = {
         "CERTIFICADO_PATH": os.environ.get("CERTIFICADO_PATH", ""),
@@ -836,7 +884,7 @@ def fiscal():
         "AMBIENTE_FISCAL": os.environ.get("AMBIENTE_FISCAL", "homologacao"),
         "UF_EMPRESA": os.environ.get("UF_EMPRESA", "MG"),
     }
-    return render_template("fiscal.html", cfg=cfg, notas=notas, xmls=xmls, cert_status=cert_status, envs=envs)
+    return render_template("fiscal.html", cfg=cfg, notas=notas, xmls=xmls, devolucoes=devolucoes, cert_status=cert_status, envs=envs)
 
 @app.route("/fiscal/certificado", methods=["GET", "POST"])
 @login_required
@@ -979,6 +1027,185 @@ def importar_xml():
     ultimos = fetch_all("SELECT * FROM xml_imports ORDER BY id DESC LIMIT 20")
     cfg = fetch_one("SELECT * FROM fiscal_config WHERE id=1")
     return render_template("importar_xml.html", ultimos=ultimos, cfg=cfg)
+
+
+# ---------------- Devolução de mercadoria ----------------
+
+def find_product_for_xml_item(db, item):
+    prod = None
+    if item.get("codigo"):
+        prod = db.execute("SELECT * FROM produtos WHERE ativo=1 AND codigo=? LIMIT 1", (item.get("codigo"),)).fetchone()
+    if not prod and item.get("ean"):
+        prod = db.execute("SELECT * FROM produtos WHERE ativo=1 AND ean=? LIMIT 1", (item.get("ean"),)).fetchone()
+    if not prod and item.get("nome"):
+        prod = db.execute("SELECT * FROM produtos WHERE ativo=1 AND nome=? LIMIT 1", (item.get("nome"),)).fetchone()
+    return prod
+
+@app.route("/devolucoes")
+@login_required
+def devolucoes():
+    q = (request.args.get("q") or "").strip()
+    if q:
+        like = f"%{q}%"
+        rows = fetch_all("""
+            SELECT * FROM devolucoes
+            WHERE fornecedor_nome LIKE ? OR fornecedor_cnpj LIKE ? OR chave_origem LIKE ? OR numero_origem LIKE ?
+            ORDER BY id DESC
+        """, (like, like, like, like))
+    else:
+        rows = fetch_all("SELECT * FROM devolucoes ORDER BY id DESC LIMIT 120")
+    return render_template("devolucoes.html", rows=rows, q=q)
+
+@app.route("/devolucoes/nova", methods=["GET", "POST"])
+@login_required
+def nova_devolucao():
+    preview = None
+    encoded_xml = ""
+    if request.method == "POST" and request.form.get("acao") == "preview":
+        arq = request.files.get("xml_file")
+        if not arq or not arq.filename:
+            flash("Selecione o XML da nota de compra original.", "erro")
+            return redirect(url_for("nova_devolucao"))
+        xml_bytes = arq.read()
+        try:
+            dados = parse_nfe_xml(xml_bytes)
+        except Exception as e:
+            flash(f"Não consegui ler esse XML. Envie o XML completo da NF-e. Detalhe: {e}", "erro")
+            return redirect(url_for("nova_devolucao"))
+        if not dados["itens"]:
+            flash("XML lido, mas não encontrei produtos na nota.", "erro")
+            return redirect(url_for("nova_devolucao"))
+        xml_hash = hashlib.sha256(xml_bytes).hexdigest()
+        encoded_xml = base64.b64encode(xml_bytes).decode("ascii")
+        with get_db() as db:
+            itens = []
+            for i, item in enumerate(dados["itens"], start=1):
+                prod = find_product_for_xml_item(db, item)
+                d = dict(item)
+                d["idx"] = i
+                d["produto_id"] = prod["id"] if prod else ""
+                d["produto_estoque"] = prod["estoque"] if prod else 0
+                d["produto_status"] = "Encontrado no cadastro" if prod else "Ainda não cadastrado"
+                itens.append(d)
+        preview = {"dados": dados, "itens": itens, "xml_hash": xml_hash}
+    return render_template("devolucao_form.html", preview=preview, encoded_xml=encoded_xml, hoje=today_str())
+
+@app.route("/devolucoes/salvar", methods=["POST"])
+@login_required
+def salvar_devolucao():
+    xml_data = request.form.get("xml_data") or ""
+    if not xml_data:
+        flash("Importe primeiro o XML da nota original.", "erro")
+        return redirect(url_for("nova_devolucao"))
+    try:
+        xml_bytes = base64.b64decode(xml_data.encode("ascii"))
+        dados = parse_nfe_xml(xml_bytes)
+    except Exception as e:
+        flash(f"Não consegui recuperar os dados do XML. Tente importar novamente. Detalhe: {e}", "erro")
+        return redirect(url_for("nova_devolucao"))
+    xml_hash = hashlib.sha256(xml_bytes).hexdigest()
+    motivo = request.form.get("motivo") or "Devolução por avaria"
+    baixar_estoque = request.form.get("baixar_estoque") == "1"
+    cfop_devolucao_padrao = (request.form.get("cfop_devolucao_padrao") or "").strip()
+    obs = request.form.get("observacao") or ""
+    selecionados = 0
+    with get_db() as db:
+        cur = db.execute("""
+            INSERT INTO devolucoes
+            (data, fornecedor_nome, fornecedor_cnpj, destinatario_nome, destinatario_cnpj, chave_origem, numero_origem,
+             serie_origem, emissao_origem, total_original, motivo, status, baixou_estoque, xml_hash, observacao)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            request.form.get("data") or today_str(), dados.get("fornecedor_nome"), dados.get("fornecedor_cnpj"),
+            dados.get("destinatario_nome"), dados.get("destinatario_cnpj"), dados.get("chave"), dados.get("numero"),
+            dados.get("serie"), dados.get("emissao"), dados.get("total"), motivo, "Rascunho", 1 if baixar_estoque else 0,
+            xml_hash, obs
+        ))
+        devolucao_id = cur.lastrowid
+        for idx, item in enumerate(dados["itens"], start=1):
+            usar = request.form.get(f"usar_{idx}") == "1"
+            if not usar:
+                continue
+            qtd_dev = money_to_float(request.form.get(f"qtd_devolver_{idx}"))
+            if qtd_dev <= 0:
+                continue
+            qtd_original = float(item.get("quantidade") or 0)
+            if qtd_original > 0 and qtd_dev > qtd_original:
+                qtd_dev = qtd_original
+            cfop_dev = request.form.get(f"cfop_devolucao_{idx}") or cfop_devolucao_padrao
+            prod = find_product_for_xml_item(db, item)
+            produto_id = prod["id"] if prod else None
+            valor_unit = float(item.get("valor_unitario") or 0)
+            valor_total = qtd_dev * valor_unit
+            db.execute("""
+                INSERT INTO devolucao_itens
+                (devolucao_id, produto_id, codigo, ean, nome, ncm, cest, cfop_original, cfop_devolucao, cst_csosn,
+                 unidade, quantidade_original, quantidade_devolver, valor_unitario, valor_total)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (devolucao_id, produto_id, item.get("codigo"), item.get("ean"), item.get("nome"), item.get("ncm"),
+                  item.get("cest"), item.get("cfop"), cfop_dev, item.get("cst_csosn"), item.get("unidade"), qtd_original,
+                  qtd_dev, valor_unit, valor_total))
+            selecionados += 1
+            if baixar_estoque and produto_id:
+                db.execute("UPDATE produtos SET estoque=estoque-? WHERE id=?", (qtd_dev, produto_id))
+                db.execute("""
+                    INSERT INTO estoque_mov (data, produto_id, tipo, quantidade, custo_unit, valor_total, origem, observacao)
+                    VALUES (?, ?, 'Saída', ?, ?, ?, ?, ?)
+                """, (request.form.get("data") or today_str(), produto_id, qtd_dev, valor_unit, valor_total,
+                      f"DEVOLUCAO #{devolucao_id}", f"Saída por devolução. NF origem {dados.get('numero') or ''}. Chave {dados.get('chave') or ''}"))
+        if selecionados <= 0:
+            db.execute("DELETE FROM devolucoes WHERE id=?", (devolucao_id,))
+            db.commit()
+            flash("Selecione pelo menos um produto e informe a quantidade para devolver.", "erro")
+            return redirect(url_for("nova_devolucao"))
+        db.commit()
+    backup_db("devolucao-criada")
+    flash("Devolução criada em rascunho. Confira os itens e envie os dados para o contador validar CFOP/CST antes da emissão real.", "ok")
+    return redirect(url_for("ver_devolucao", devolucao_id=devolucao_id))
+
+@app.route("/devolucoes/<int:devolucao_id>")
+@login_required
+def ver_devolucao(devolucao_id):
+    dev = fetch_one("SELECT * FROM devolucoes WHERE id=?", (devolucao_id,))
+    if not dev:
+        flash("Devolução não encontrada.", "erro")
+        return redirect(url_for("devolucoes"))
+    itens = fetch_all("SELECT * FROM devolucao_itens WHERE devolucao_id=? ORDER BY id", (devolucao_id,))
+    total = sum(float(i["valor_total"] or 0) for i in itens)
+    return render_template("devolucao_detalhe.html", dev=dev, itens=itens, total=total)
+
+@app.route("/devolucoes/<int:devolucao_id>/emitida", methods=["POST"])
+@login_required
+def marcar_devolucao_emitida(devolucao_id):
+    exec_sql("UPDATE devolucoes SET status=?, nf_devolucao_numero=?, nf_devolucao_chave=? WHERE id=?",
+             (request.form.get("status") or "Emitida", request.form.get("nf_devolucao_numero") or "", request.form.get("nf_devolucao_chave") or "", devolucao_id))
+    backup_db("devolucao-status")
+    flash("Status da devolução atualizado.", "ok")
+    return redirect(url_for("ver_devolucao", devolucao_id=devolucao_id))
+
+@app.route("/devolucoes/<int:devolucao_id>/excluir", methods=["POST"])
+@login_required
+def excluir_devolucao(devolucao_id):
+    dev = fetch_one("SELECT * FROM devolucoes WHERE id=?", (devolucao_id,))
+    if not dev:
+        flash("Devolução não encontrada.", "erro")
+        return redirect(url_for("devolucoes"))
+    if dev["status"] != "Rascunho":
+        flash("Só é possível excluir devolução em rascunho.", "erro")
+        return redirect(url_for("ver_devolucao", devolucao_id=devolucao_id))
+    with get_db() as db:
+        if dev["baixou_estoque"]:
+            itens = db.execute("SELECT * FROM devolucao_itens WHERE devolucao_id=?", (devolucao_id,)).fetchall()
+            for i in itens:
+                if i["produto_id"]:
+                    db.execute("UPDATE produtos SET estoque=estoque+? WHERE id=?", (i["quantidade_devolver"], i["produto_id"]))
+            db.execute("DELETE FROM estoque_mov WHERE origem=?", (f"DEVOLUCAO #{devolucao_id}",))
+        db.execute("DELETE FROM devolucao_itens WHERE devolucao_id=?", (devolucao_id,))
+        db.execute("DELETE FROM devolucoes WHERE id=?", (devolucao_id,))
+        db.commit()
+    backup_db("devolucao-excluida")
+    flash("Devolução excluída.", "ok")
+    return redirect(url_for("devolucoes"))
 
 
 # ---------------- Relatórios / Backup ----------------

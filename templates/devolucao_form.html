@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="hero">
+  <span class="badge">Nota de devolução</span>
+  <h1>Gerar devolução pela nota de compra</h1>
+  <p>Use o XML da compra original. O sistema puxa fornecedor, chave da NF-e, produtos, NCM, CFOP, unidade, quantidade e valores.</p>
+</section>
+
+<div class="card dark">
+  <h2>Fluxo recomendado</h2>
+  <p style="color:#b9d7ee">1) Importe o XML da compra original. 2) Selecione os produtos avariados. 3) Informe as quantidades da devolução. 4) Gere o rascunho e valide CFOP/CST com o contador antes da emissão real.</p>
+</div>
+
+{% if not preview %}
+<div class="card">
+  <h2>Importar XML da nota original</h2>
+  <form method="post" enctype="multipart/form-data">
+    <input type="hidden" name="acao" value="preview">
+    <div class="row">
+      <div style="grid-column:span 2"><label>XML da NF-e de compra</label><input type="file" name="xml_file" accept=".xml,text/xml" required></div>
+      <div><label>Data da devolução</label><input type="date" name="data" value="{{ hoje }}"></div>
+      <div><label>Motivo</label><input value="Avaria nos produtos" readonly></div>
+    </div>
+    <button class="green">Ler XML e escolher produtos</button>
+    <a class="btn secondary" href="{{ url_for('devolucoes') }}">Voltar</a>
+  </form>
+</div>
+{% else %}
+<div class="card">
+  <h2>Nota original localizada</h2>
+  <div class="row">
+    <div><label>NF origem</label><input readonly value="{{ preview.dados.numero or '-' }}"></div>
+    <div><label>Série</label><input readonly value="{{ preview.dados.serie or '-' }}"></div>
+    <div><label>Emissão</label><input readonly value="{{ preview.dados.emissao|brdate }}"></div>
+    <div><label>Total original</label><input readonly value="{{ preview.dados.total|money }}"></div>
+    <div style="grid-column:span 2"><label>Fornecedor</label><input readonly value="{{ preview.dados.fornecedor_nome or '-' }}"></div>
+    <div><label>CNPJ/CPF fornecedor</label><input readonly value="{{ preview.dados.fornecedor_cnpj or '-' }}"></div>
+    <div><label>Destinatário da nota</label><input readonly value="{{ preview.dados.destinatario_nome or '-' }}"></div>
+    <div style="grid-column:span 4"><label>Chave da NF-e original</label><input readonly value="{{ preview.dados.chave or '-' }}"></div>
+  </div>
+</div>
+
+<form method="post" action="{{ url_for('salvar_devolucao') }}" class="card">
+  <input type="hidden" name="xml_data" value="{{ encoded_xml }}">
+  <h2>Produtos para devolver</h2>
+  <div class="row">
+    <div><label>Data da devolução</label><input type="date" name="data" value="{{ hoje }}"></div>
+    <div><label>Motivo</label><input name="motivo" value="Devolução por avaria"></div>
+    <div><label>CFOP devolução padrão</label><input name="cfop_devolucao_padrao" placeholder="Confirmar com contador"></div>
+    <div><label>Baixar estoque agora?</label><select name="baixar_estoque"><option value="0">Não, só rascunho</option><option value="1">Sim, dar saída no estoque</option></select></div>
+  </div>
+  <label style="margin-top:12px">Observação</label><input name="observacao" placeholder="Ex.: Produtos chegaram avariados, devolução ao fornecedor.">
+
+  <div class="table-wrap" style="margin-top:16px">
+    <table>
+      <thead><tr><th>Devolver</th><th>Produto</th><th>Qtd nota</th><th>Qtd devolver</th><th>Valor unit.</th><th>NCM/CFOP</th><th>CFOP devolução</th><th>Status cadastro</th></tr></thead>
+      <tbody>
+      {% for item in preview.itens %}
+      <tr>
+        <td><input type="checkbox" name="usar_{{ item.idx }}" value="1" checked style="width:22px;min-height:22px"></td>
+        <td><b>{{ item.nome }}</b><br><small>Cód: {{ item.codigo or '-' }} • EAN: {{ item.ean or '-' }}</small></td>
+        <td>{{ item.quantidade|num }} {{ item.unidade }}</td>
+        <td><input name="qtd_devolver_{{ item.idx }}" value="{{ item.quantidade|num }}" style="min-width:110px"></td>
+        <td>{{ item.valor_unitario|money }}</td>
+        <td><small>NCM {{ item.ncm or '-' }}<br>CFOP origem {{ item.cfop or '-' }}<br>CST/CSOSN {{ item.cst_csosn or '-' }}</small></td>
+        <td><input name="cfop_devolucao_{{ item.idx }}" placeholder="Contador" style="min-width:120px"></td>
+        <td><span class="pill {{ 'green' if item.produto_id else 'warn' }}">{{ item.produto_status }}</span><br><small>Estoque atual: {{ item.produto_estoque|num }}</small></td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="actions">
+    <button class="green">Gerar rascunho da devolução</button>
+    <a class="btn secondary" href="{{ url_for('nova_devolucao') }}">Importar outro XML</a>
+  </div>
+</form>
+{% endif %}
+{% endblock %}
