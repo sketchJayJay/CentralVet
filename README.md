@@ -106,3 +106,19 @@ Esta versão já vem com preenchimento dos dados cadastrais da empresa conforme 
 - Endereço: R MANOEL FRANCISCO DE CASTRO, 21, B, CENTRO, ORIZANIA/MG, CEP 36.828-000
 
 Na tela Fiscal existe o botão “Preencher dados da empresa”. Ele restaura esses dados e mantém o ambiente em Homologação. Produção continua dependendo de CSC/Token, séries, CFOP/CST/CSOSN e regras fiscais corretas.
+
+## Atualização: assistente de CFOP para devolução
+
+Na tela **Devoluções > Nova devolução**, depois de importar o XML da compra, o sistema agora permite escolher:
+
+- Mesmo estado (MG) ou outro estado
+- Sem substituição tributária ou com substituição tributária
+
+Com isso, o sistema sugere automaticamente:
+
+- 5202: mesmo estado, sem ST
+- 6202: outro estado, sem ST
+- 5411: mesmo estado, com ST
+- 6411: outro estado, com ST
+
+O campo continua editável por produto para exceções fiscais.

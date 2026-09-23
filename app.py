@@ -177,6 +177,8 @@ def parse_nfe_xml(xml_bytes):
     dest = xml_first(root, "dest")
     fornecedor_nome = xml_first_text(emit, "xNome") or xml_first_text(emit, "xFant")
     fornecedor_cnpj = xml_first_text(emit, "CNPJ") or xml_first_text(emit, "CPF")
+    ender_emit = xml_first(emit, "enderEmit")
+    ender_dest = xml_first(dest, "enderDest")
     dados = {
         "chave": chave,
         "numero": xml_first_text(ide, "nNF"),
@@ -184,8 +186,10 @@ def parse_nfe_xml(xml_bytes):
         "emissao": (xml_first_text(ide, "dhEmi") or xml_first_text(ide, "dEmi"))[:10],
         "fornecedor_nome": fornecedor_nome,
         "fornecedor_cnpj": fornecedor_cnpj,
+        "fornecedor_uf": xml_first_text(ender_emit, "UF"),
         "destinatario_nome": xml_first_text(dest, "xNome"),
         "destinatario_cnpj": xml_first_text(dest, "CNPJ") or xml_first_text(dest, "CPF"),
+        "destinatario_uf": xml_first_text(ender_dest, "UF"),
         "natureza": xml_first_text(ide, "natOp"),
         "modelo": xml_first_text(ide, "mod"),
         "total": xml_float(xml_first_text(total_node, "vNF")),
@@ -211,6 +215,16 @@ def parse_nfe_xml(xml_bytes):
         if item["nome"]:
             dados["itens"].append(item)
     return dados
+
+def sugerir_cfop_devolucao(tipo_operacao="mesmo_estado", substituicao="sem_st"):
+    """Sugere CFOP de devolução de compra para mercadoria de revenda.
+    A regra serve para acelerar rascunhos e homologação; o campo fica editável por item.
+    """
+    tipo = (tipo_operacao or "mesmo_estado").strip()
+    st = (substituicao or "sem_st").strip()
+    if st == "com_st":
+        return "6411" if tipo == "outro_estado" else "5411"
+    return "6202" if tipo == "outro_estado" else "5202"
 
 def cert_runtime_status():
     path = os.environ.get("CERTIFICADO_PATH", "").strip()
@@ -1203,8 +1217,12 @@ def nova_devolucao():
                 d["produto_estoque"] = prod["estoque"] if prod else 0
                 d["produto_status"] = "Encontrado no cadastro" if prod else "Ainda não cadastrado"
                 itens.append(d)
-        preview = {"dados": dados, "itens": itens, "xml_hash": xml_hash}
-    return render_template("devolucao_form.html", preview=preview, encoded_xml=encoded_xml, hoje=today_str())
+        empresa_uf = os.environ.get("UF_EMPRESA", "MG").strip() or "MG"
+        fornecedor_uf = (dados.get("fornecedor_uf") or "").strip()
+        tipo_sugerido = "outro_estado" if fornecedor_uf and fornecedor_uf != empresa_uf else "mesmo_estado"
+        cfop_sugerido = sugerir_cfop_devolucao(tipo_sugerido, "sem_st")
+        preview = {"dados": dados, "itens": itens, "xml_hash": xml_hash, "empresa_uf": empresa_uf, "tipo_sugerido": tipo_sugerido, "cfop_sugerido": cfop_sugerido}
+    return render_template("devolucao_form.html", preview=preview, encoded_xml=encoded_xml, hoje=today_str(), empresa_uf=os.environ.get("UF_EMPRESA", "MG"))
 
 @app.route("/devolucoes/salvar", methods=["POST"])
 @login_required
@@ -1223,7 +1241,13 @@ def salvar_devolucao():
     motivo = request.form.get("motivo") or "Devolução por avaria"
     baixar_estoque = request.form.get("baixar_estoque") == "1"
     cfop_devolucao_padrao = (request.form.get("cfop_devolucao_padrao") or "").strip()
+    tipo_operacao_devolucao = (request.form.get("tipo_operacao_devolucao") or "mesmo_estado").strip()
+    substituicao_devolucao = (request.form.get("substituicao_devolucao") or "sem_st").strip()
+    if not cfop_devolucao_padrao:
+        cfop_devolucao_padrao = sugerir_cfop_devolucao(tipo_operacao_devolucao, substituicao_devolucao)
     obs = request.form.get("observacao") or ""
+    obs_info = f"Assistente CFOP: {'outro estado' if tipo_operacao_devolucao == 'outro_estado' else 'mesmo estado'} / {'com ST' if substituicao_devolucao == 'com_st' else 'sem ST'} / CFOP sugerido {cfop_devolucao_padrao}."
+    obs = (obs + " | " + obs_info).strip(" |")
     selecionados = 0
     with get_db() as db:
         cur = db.execute("""
