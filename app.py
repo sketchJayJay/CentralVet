@@ -218,6 +218,37 @@ def cert_runtime_status():
     exists = bool(path and os.path.exists(path))
     return {"path": path, "has_password": has_pass, "exists": exists}
 
+
+def cfg_val(cfg, key):
+    try:
+        return str(cfg[key] or '').strip()
+    except Exception:
+        return ''
+
+def fiscal_checklist(cfg, cert_status):
+    checks = [
+        {"item": "Certificado A1 no servidor", "ok": bool(cert_status.get("exists")), "obs": cert_status.get("path") or "Verifique o upload do A1"},
+        {"item": "Senha do certificado no Coolify", "ok": bool(cert_status.get("has_password")), "obs": "Variável CERTIFICADO_SENHA"},
+        {"item": "CNPJ da empresa", "ok": bool(cfg_val(cfg, "cnpj")), "obs": cfg_val(cfg, "cnpj") or "Preencher CNPJ"},
+        {"item": "Inscrição Estadual", "ok": bool(cfg_val(cfg, "inscricao_estadual")), "obs": cfg_val(cfg, "inscricao_estadual") or "Preencher IE"},
+        {"item": "Regime tributário", "ok": bool(cfg_val(cfg, "regime")), "obs": cfg_val(cfg, "regime") or "Confirmar com contador"},
+        {"item": "Série e número inicial NF-e", "ok": bool(cfg_val(cfg, "nf_serie") and cfg_val(cfg, "nf_numero_inicial")), "obs": f"Série {cfg_val(cfg,'nf_serie') or '-'} • Nº {cfg_val(cfg,'nf_numero_inicial') or '-'}"},
+        {"item": "Série e número inicial NFC-e", "ok": bool(cfg_val(cfg, "nfce_serie") and cfg_val(cfg, "nfce_numero_inicial")), "obs": f"Série {cfg_val(cfg,'nfce_serie') or '-'} • Nº {cfg_val(cfg,'nfce_numero_inicial') or '-'}"},
+        {"item": "CSC/Token da NFC-e", "ok": bool(cfg_val(cfg, "csc_token")), "obs": "Preenchido" if cfg_val(cfg, "csc_token") else "Obrigatório para NFC-e em produção"},
+        {"item": "CFOP padrão", "ok": bool(cfg_val(cfg, "cfop_padrao")), "obs": cfg_val(cfg, "cfop_padrao") or "Pode usar provisório em homologação"},
+        {"item": "CST/CSOSN padrão", "ok": bool(cfg_val(cfg, "cst_csosn_padrao")), "obs": cfg_val(cfg, "cst_csosn_padrao") or "Pode usar provisório em homologação"},
+    ]
+    return checks
+
+def fiscal_prod_ready(cfg, cert_status):
+    required = ["cnpj", "inscricao_estadual", "regime", "nf_serie", "nf_numero_inicial", "nfce_serie", "nfce_numero_inicial", "csc_token", "cfop_padrao", "cst_csosn_padrao"]
+    missing = [r for r in required if not cfg_val(cfg, r)]
+    if not cert_status.get("exists"):
+        missing.append("certificado_a1")
+    if not cert_status.get("has_password"):
+        missing.append("senha_certificado")
+    return (len(missing) == 0, missing)
+
 def init_db():
     with get_db() as db:
         db.executescript("""
@@ -854,6 +885,19 @@ def financeiro_excluir(item_id):
 @login_required
 def fiscal():
     if request.method == "POST":
+        ambiente = request.form.get("ambiente", "Homologação")
+        if ambiente == "Produção":
+            temp_cfg = {k: request.form.get(k, "") for k in [
+                "cnpj", "inscricao_estadual", "regime", "nf_serie", "nf_numero_inicial", "nfce_serie",
+                "nfce_numero_inicial", "csc_token", "cfop_padrao", "cst_csosn_padrao"
+            ]}
+            class TempCfg(dict):
+                def __getitem__(self, key):
+                    return self.get(key, "")
+            ready, missing = fiscal_prod_ready(TempCfg(temp_cfg), cert_runtime_status())
+            if not ready:
+                ambiente = "Homologação"
+                flash("Mantive em Homologação: ainda falta completar dados fiscais antes de liberar Produção.", "erro")
         exec_sql("""
             UPDATE fiscal_config SET razao_social=?, nome_fantasia=?, cnpj=?, inscricao_estadual=?,
             endereco=?, municipio=?, uf=?, cep=?, telefone=?, email=?, regime=?, ambiente=?, certificado_nome=?,
@@ -864,7 +908,7 @@ def fiscal():
             request.form.get("razao_social",""), request.form.get("nome_fantasia",""), request.form.get("cnpj",""),
             request.form.get("inscricao_estadual",""), request.form.get("endereco",""), request.form.get("municipio",""),
             request.form.get("uf",""), request.form.get("cep",""), request.form.get("telefone",""), request.form.get("email",""),
-            request.form.get("regime",""), request.form.get("ambiente","Homologação"), request.form.get("certificado_nome",""),
+            request.form.get("regime",""), ambiente, request.form.get("certificado_nome",""),
             request.form.get("certificado_path",""), request.form.get("certificado_senha_env","CERTIFICADO_SENHA"),
             request.form.get("nf_serie",""), request.form.get("nf_numero_inicial",""), request.form.get("nfce_serie",""),
             request.form.get("nfce_numero_inicial",""), request.form.get("csc_id",""), request.form.get("csc_token",""),
@@ -884,7 +928,35 @@ def fiscal():
         "AMBIENTE_FISCAL": os.environ.get("AMBIENTE_FISCAL", "homologacao"),
         "UF_EMPRESA": os.environ.get("UF_EMPRESA", "MG"),
     }
-    return render_template("fiscal.html", cfg=cfg, notas=notas, xmls=xmls, devolucoes=devolucoes, cert_status=cert_status, envs=envs)
+    checklist = fiscal_checklist(cfg, cert_status)
+    prod_ready, prod_missing = fiscal_prod_ready(cfg, cert_status)
+    return render_template("fiscal.html", cfg=cfg, notas=notas, xmls=xmls, devolucoes=devolucoes, cert_status=cert_status, envs=envs, checklist=checklist, prod_ready=prod_ready, prod_missing=prod_missing)
+
+@app.route("/fiscal/preencher-padrao", methods=["POST"])
+@login_required
+def fiscal_preencher_padrao():
+    """Preenche campos provisórios para homologação quando a contabilidade demora a responder.
+    Não libera produção sem os dados reais.
+    """
+    exec_sql("""
+        UPDATE fiscal_config SET
+            ambiente='Homologação',
+            uf=COALESCE(NULLIF(uf,''), 'MG'),
+            certificado_path=COALESCE(NULLIF(certificado_path,''), '/app/certs/centralvet_a1.pfx'),
+            certificado_senha_env=COALESCE(NULLIF(certificado_senha_env,''), 'CERTIFICADO_SENHA'),
+            regime=COALESCE(NULLIF(regime,''), 'Simples Nacional - conferir com contador'),
+            nf_serie=COALESCE(NULLIF(nf_serie,''), '1'),
+            nf_numero_inicial=COALESCE(NULLIF(nf_numero_inicial,''), '1'),
+            nfce_serie=COALESCE(NULLIF(nfce_serie,''), '1'),
+            nfce_numero_inicial=COALESCE(NULLIF(nfce_numero_inicial,''), '1'),
+            cfop_padrao=COALESCE(NULLIF(cfop_padrao,''), '5102'),
+            cst_csosn_padrao=COALESCE(NULLIF(cst_csosn_padrao,''), '102'),
+            observacao=COALESCE(NULLIF(observacao,''), 'Configuração provisória para homologação/testes. Conferir CFOP, CST/CSOSN, CSC/Token, séries e impostos com a contabilidade antes de produção.')
+        WHERE id=1
+    """)
+    backup_db("fiscal-padrao-homologacao")
+    flash("Preenchi o básico para homologação. Produção continua bloqueada até confirmar CSC/Token e regras fiscais reais.", "ok")
+    return redirect(url_for("fiscal"))
 
 @app.route("/fiscal/certificado", methods=["GET", "POST"])
 @login_required

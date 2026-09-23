@@ -80,3 +80,18 @@ Esta versão inclui o módulo de devolução de mercadoria:
 5. Valide CFOP/CST/CSOSN com o contador antes de emitir em produção.
 
 A tela cria o rascunho vinculado à chave da NF-e original e permite baixar o estoque se necessário.
+
+## Versão modo fiscal acelerado
+
+Esta versão adiciona um botão em Fiscal NF-e/NFC-e chamado **Preencher básico p/ teste**.
+
+Ele completa campos provisórios para homologação quando a contabilidade demora a responder:
+- Série NF-e: 1
+- Número inicial NF-e: 1
+- Série NFC-e: 1
+- Número inicial NFC-e: 1
+- CFOP padrão provisório: 5102
+- CST/CSOSN padrão provisório: 102
+- Ambiente: Homologação
+
+Importante: esses dados são para teste/homologação. O sistema mantém produção bloqueada se faltar CSC/Token, séries, CFOP/CST/CSOSN, certificado ou senha.
