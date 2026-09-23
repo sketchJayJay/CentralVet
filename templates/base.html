@@ -5,6 +5,15 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>{{ title or app_name or "CENTRALVET" }}</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <link rel="manifest" href="{{ url_for('manifest_json') }}">
+  <meta name="theme-color" content="#07111f">
+  <meta name="application-name" content="CENTRALVET">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="msapplication-TileColor" content="#07111f">
+  <link rel="icon" type="image/png" sizes="192x192" href="{{ url_for('static', filename='icon-192.png') }}">
+  <link rel="apple-touch-icon" href="{{ url_for('static', filename='icon-192.png') }}">
 </head>
 <body>
 {% if session.get('logged') %}
@@ -76,6 +85,20 @@ function closeMenu(){ document.body.classList.remove('menu-open'); }
 window.addEventListener('resize', ()=>{ if(window.innerWidth > 900) closeMenu(); });
 document.addEventListener('click', function(e){
   if(window.innerWidth <= 900 && e.target.closest('.menu a')) closeMenu();
+});
+
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', function(){
+    navigator.serviceWorker.register('/sw.js').catch(function(){ /* mantém normal se o navegador bloquear */ });
+  });
+}
+
+function isInstalledApp(){
+  return window.matchMedia('(display-mode: standalone)').matches || window.matchMedia('(display-mode: fullscreen)').matches || window.navigator.standalone;
+}
+
+document.addEventListener('DOMContentLoaded', function(){
+  if(isInstalledApp()) document.body.classList.add('installed-app-mode');
 });
 </script>
 {% block scripts %}{% endblock %}

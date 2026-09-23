@@ -1,0 +1,41 @@
+{
+  "name": "CENTRALVET Agropecuária",
+  "short_name": "CENTRALVET",
+  "description": "Sistema de gestão, estoque, vendas e fiscal da CENTRALVET Agropecuária.",
+  "start_url": "/",
+  "scope": "/",
+  "id": "/",
+  "display": "fullscreen",
+  "display_override": [
+    "window-controls-overlay",
+    "fullscreen",
+    "standalone"
+  ],
+  "orientation": "any",
+  "background_color": "#07111f",
+  "theme_color": "#07111f",
+  "categories": [
+    "business",
+    "productivity"
+  ],
+  "icons": [
+    {
+      "src": "/static/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/static/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/static/maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

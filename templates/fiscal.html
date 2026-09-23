@@ -14,6 +14,9 @@
     <form method="post" action="{{ url_for('fiscal_preencher_padrao') }}" style="display:inline" onsubmit="return confirm('Preencher campos provisórios para homologação? Produção continuará bloqueada até validar com a contabilidade.')">
       <button type="submit" class="warn">Preencher básico p/ teste</button>
     </form>
+    <form method="post" action="{{ url_for('fiscal_aplicar_fixos') }}" style="display:inline" onsubmit="return confirm('Restaurar todos os dados fiscais recebidos, incluindo séries e CSC/Token?')">
+      <button type="submit" class="green">Restaurar dados fiscais fixos</button>
+    </form>
   </div>
 </section>
 

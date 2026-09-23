@@ -127,3 +127,12 @@ td{padding:12px 10px;border-bottom:1px solid #edf2f7;vertical-align:middle}
 }
 
 @media print{.side,.hide-print,.actions,.mobile-topbar,.mobile-backdrop,.mobile-quicknav{display:none!important}.main{margin:0;width:100%;padding:0}body{background:#fff;color:#000}.card,.hero{box-shadow:none;border:0}.receipt{padding:0;max-width:none}.client-logo-box,.hero-logo{box-shadow:none}.receipt-logo-line img{width:170px}}
+
+
+/* Modo aplicativo instalado pelo Microsoft Edge / PWA */
+body.installed-app-mode{min-height:100vh;background:#07111f;}
+body.installed-app-mode .layout{min-height:100vh;}
+@media (display-mode: fullscreen), (display-mode: standalone){
+  html,body{min-height:100%;background:#07111f;}
+  .main{min-height:100vh;}
+}

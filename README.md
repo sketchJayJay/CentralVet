@@ -122,3 +122,16 @@ Com isso, o sistema sugere automaticamente:
 - 6411: outro estado, com ST
 
 O campo continua editável por produto para exceções fiscais.
+
+
+## Instalar como aplicativo no Microsoft Edge
+
+Esta versão foi configurada como PWA. Depois do deploy:
+
+1. Abra o sistema no Microsoft Edge pelo notebook.
+2. Clique nos três pontinhos do Edge.
+3. Vá em **Aplicativos**.
+4. Clique em **Instalar este site como aplicativo**.
+5. Abra pelo atalho criado na área de trabalho ou menu Iniciar.
+
+O app abre sem a barra normal do navegador, com visual de aplicativo e manifestação em modo tela cheia/standalone.

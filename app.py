@@ -8,7 +8,7 @@ import json
 import xml.etree.ElementTree as ET
 from datetime import datetime, date
 from functools import wraps
-from flask import Flask, render_template, request, redirect, url_for, flash, session, send_file, jsonify
+from flask import Flask, render_template, request, redirect, url_for, flash, session, send_file, jsonify, send_from_directory, make_response
 
 APP_NAME = "CENTRALVET Agropecuária"
 DATA_DIR = os.environ.get("DATA_DIR", os.path.join(os.path.dirname(__file__), "data"))
@@ -22,6 +22,48 @@ app.config["MAX_CONTENT_LENGTH"] = 8 * 1024 * 1024
 app.secret_key = os.environ.get("SECRET_KEY", "centralvet-veltrix-2026")
 ADMIN_USER = os.environ.get("ADMIN_USER", "admin")
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "1234")
+
+# Dados fiscais oficiais/base da CENTRALVET.
+# São usados para preencher automaticamente a configuração fiscal
+# quando o banco estiver vazio após redeploy ou primeira instalação.
+FISCAL_DEFAULTS = {
+    "razao_social": "CENTRALVET AGROPECUARIA LTDA",
+    "nome_fantasia": "CENTRALVET AGROPECUARIA",
+    "cnpj": "68.690.225/0001-50",
+    "inscricao_estadual": "005626088.00-49",
+    "endereco": "R MANOEL FRANCISCO DE CASTRO, 21, B, CENTRO",
+    "municipio": "ORIZANIA",
+    "uf": "MG",
+    "cep": "36.828-000",
+    "telefone": "(31) 3875-1342",
+    "email": "CONTABILIDADEREIS01@HOTMAIL.COM",
+    "regime": "SIMPLES NACIONAL",
+    "ambiente": "Homologação",
+    "certificado_nome": "A1 CENTRALVET válido até 05/09/2027",
+    "certificado_path": "/app/certs/centralvet_a1.pfx",
+    "certificado_senha_env": "CERTIFICADO_SENHA",
+    "nf_serie": "1",
+    "nf_numero_inicial": "1",
+    "nfce_serie": "1",
+    "nfce_numero_inicial": "1",
+    "csc_id": "000001",
+    "csc_token": "4b24675b696846632d2ed5e0519baa7b",
+    "cfop_padrao": "5102",
+    "cst_csosn_padrao": "102",
+    "observacao": "Dados fiscais base fixados no sistema para homologação. Confirmar regras fiscais finais antes de produção.",
+}
+
+
+@app.route("/manifest.json")
+def manifest_json():
+    return send_from_directory(os.path.join(app.root_path, "static"), "manifest.json", mimetype="application/manifest+json")
+
+@app.route("/sw.js")
+def service_worker():
+    response = make_response(send_from_directory(os.path.join(app.root_path, "static"), "sw.js", mimetype="application/javascript"))
+    response.headers["Service-Worker-Allowed"] = "/"
+    response.headers["Cache-Control"] = "no-cache"
+    return response
 
 
 # ---------------- Helpers ----------------
@@ -441,12 +483,16 @@ def init_db():
             created_at TEXT DEFAULT CURRENT_TIMESTAMP
         );
         """)
-        # default fiscal config based on CENTRALVET documents
+        # default fiscal config based on CENTRALVET documents and SIARE/NFC-e data
         db.execute("""
             INSERT OR IGNORE INTO fiscal_config
-            (id, razao_social, nome_fantasia, cnpj, inscricao_estadual, endereco, municipio, uf, cep, telefone, email, regime, ambiente, certificado_path, certificado_senha_env, observacao)
-            VALUES (1, 'CENTRALVET AGROPECUARIA LTDA', 'CENTRALVET AGROPECUARIA', '68.690.225/0001-50', '005626088.00-49', 'R MANOEL FRANCISCO DE CASTRO, 21, B, CENTRO', 'ORIZANIA', 'MG', '36.828-000', '(31) 3875-1342', 'CONTABILIDADEREIS01@HOTMAIL.COM', 'SIMPLES NACIONAL', 'Homologação', '/app/certs/centralvet_a1.pfx', 'CERTIFICADO_SENHA', 'Dados preenchidos pelos documentos enviados: CNPJ, inscrição estadual e contrato social. CNAE principal: 4683-4/00. Conferir CSC/Token, séries, CFOP/CST/CSOSN e impostos com a contabilidade antes de produção.')
-        """)
+            (id, razao_social, nome_fantasia, cnpj, inscricao_estadual, endereco, municipio, uf, cep, telefone, email, regime, ambiente,
+             certificado_nome, certificado_path, certificado_senha_env, nf_serie, nf_numero_inicial, nfce_serie, nfce_numero_inicial,
+             csc_id, csc_token, cfop_padrao, cst_csosn_padrao, observacao)
+            VALUES (1, :razao_social, :nome_fantasia, :cnpj, :inscricao_estadual, :endereco, :municipio, :uf, :cep, :telefone, :email, :regime, :ambiente,
+             :certificado_nome, :certificado_path, :certificado_senha_env, :nf_serie, :nf_numero_inicial, :nfce_serie, :nfce_numero_inicial,
+             :csc_id, :csc_token, :cfop_padrao, :cst_csosn_padrao, :observacao)
+        """, FISCAL_DEFAULTS)
         for column, ddl in [
             ('ean', 'TEXT'), ('cest', 'TEXT'), ('ultima_chave_xml', 'TEXT'), ('fornecedor_id', 'INTEGER')
         ]:
@@ -457,24 +503,35 @@ def init_db():
             ('cfop_padrao', 'TEXT'), ('cst_csosn_padrao', 'TEXT')
         ]:
             add_column(db, 'fiscal_config', column, ddl)
-        db.execute("UPDATE fiscal_config SET certificado_path=COALESCE(NULLIF(certificado_path,''), '/app/certs/centralvet_a1.pfx'), certificado_senha_env=COALESCE(NULLIF(certificado_senha_env,''), 'CERTIFICADO_SENHA') WHERE id=1")
-        # Fill only empty company fields on existing deployments, preserving any manual changes already made in the system.
+        # Fill empty fiscal fields on existing deployments, preserving manual changes already made in the system.
         db.execute("""
             UPDATE fiscal_config SET
-              razao_social=COALESCE(NULLIF(razao_social,''), 'CENTRALVET AGROPECUARIA LTDA'),
-              nome_fantasia=COALESCE(NULLIF(nome_fantasia,''), 'CENTRALVET AGROPECUARIA'),
-              cnpj=COALESCE(NULLIF(cnpj,''), '68.690.225/0001-50'),
-              inscricao_estadual=COALESCE(NULLIF(inscricao_estadual,''), '005626088.00-49'),
-              endereco=COALESCE(NULLIF(endereco,''), 'R MANOEL FRANCISCO DE CASTRO, 21, B, CENTRO'),
-              municipio=COALESCE(NULLIF(municipio,''), 'ORIZANIA'),
-              uf=COALESCE(NULLIF(uf,''), 'MG'),
-              cep=COALESCE(NULLIF(cep,''), '36.828-000'),
-              telefone=COALESCE(NULLIF(telefone,''), '(31) 3875-1342'),
-              email=COALESCE(NULLIF(email,''), 'CONTABILIDADEREIS01@HOTMAIL.COM'),
-              regime=COALESCE(NULLIF(regime,''), 'SIMPLES NACIONAL'),
-              observacao=COALESCE(NULLIF(observacao,''), 'Dados preenchidos pelos documentos enviados: CNPJ, inscrição estadual e contrato social. CNAE principal: 4683-4/00. Conferir CSC/Token, séries, CFOP/CST/CSOSN e impostos com a contabilidade antes de produção.')
+              razao_social=COALESCE(NULLIF(razao_social,''), :razao_social),
+              nome_fantasia=COALESCE(NULLIF(nome_fantasia,''), :nome_fantasia),
+              cnpj=COALESCE(NULLIF(cnpj,''), :cnpj),
+              inscricao_estadual=COALESCE(NULLIF(inscricao_estadual,''), :inscricao_estadual),
+              endereco=COALESCE(NULLIF(endereco,''), :endereco),
+              municipio=COALESCE(NULLIF(municipio,''), :municipio),
+              uf=COALESCE(NULLIF(uf,''), :uf),
+              cep=COALESCE(NULLIF(cep,''), :cep),
+              telefone=COALESCE(NULLIF(telefone,''), :telefone),
+              email=COALESCE(NULLIF(email,''), :email),
+              regime=COALESCE(NULLIF(regime,''), :regime),
+              ambiente=COALESCE(NULLIF(ambiente,''), :ambiente),
+              certificado_nome=COALESCE(NULLIF(certificado_nome,''), :certificado_nome),
+              certificado_path=COALESCE(NULLIF(certificado_path,''), :certificado_path),
+              certificado_senha_env=COALESCE(NULLIF(certificado_senha_env,''), :certificado_senha_env),
+              nf_serie=COALESCE(NULLIF(nf_serie,''), :nf_serie),
+              nf_numero_inicial=COALESCE(NULLIF(nf_numero_inicial,''), :nf_numero_inicial),
+              nfce_serie=COALESCE(NULLIF(nfce_serie,''), :nfce_serie),
+              nfce_numero_inicial=COALESCE(NULLIF(nfce_numero_inicial,''), :nfce_numero_inicial),
+              csc_id=COALESCE(NULLIF(csc_id,''), :csc_id),
+              csc_token=COALESCE(NULLIF(csc_token,''), :csc_token),
+              cfop_padrao=COALESCE(NULLIF(cfop_padrao,''), :cfop_padrao),
+              cst_csosn_padrao=COALESCE(NULLIF(cst_csosn_padrao,''), :cst_csosn_padrao),
+              observacao=COALESCE(NULLIF(observacao,''), :observacao)
             WHERE id=1
-        """)
+        """, FISCAL_DEFAULTS)
         db.commit()
 
 init_db()
@@ -966,27 +1023,65 @@ def fiscal():
 @app.route("/fiscal/preencher-padrao", methods=["POST"])
 @login_required
 def fiscal_preencher_padrao():
-    """Preenche campos provisórios para homologação quando a contabilidade demora a responder.
-    Não libera produção sem os dados reais.
+    """Preenche campos para homologação quando a contabilidade demora a responder.
+    Inclui as séries e CSC/Token já recebidos, mas mantém em Homologação por segurança.
     """
     exec_sql("""
         UPDATE fiscal_config SET
             ambiente='Homologação',
-            uf=COALESCE(NULLIF(uf,''), 'MG'),
-            certificado_path=COALESCE(NULLIF(certificado_path,''), '/app/certs/centralvet_a1.pfx'),
-            certificado_senha_env=COALESCE(NULLIF(certificado_senha_env,''), 'CERTIFICADO_SENHA'),
-            regime=COALESCE(NULLIF(regime,''), 'Simples Nacional - conferir com contador'),
-            nf_serie=COALESCE(NULLIF(nf_serie,''), '1'),
-            nf_numero_inicial=COALESCE(NULLIF(nf_numero_inicial,''), '1'),
-            nfce_serie=COALESCE(NULLIF(nfce_serie,''), '1'),
-            nfce_numero_inicial=COALESCE(NULLIF(nfce_numero_inicial,''), '1'),
-            cfop_padrao=COALESCE(NULLIF(cfop_padrao,''), '5102'),
-            cst_csosn_padrao=COALESCE(NULLIF(cst_csosn_padrao,''), '102'),
-            observacao=COALESCE(NULLIF(observacao,''), 'Configuração provisória para homologação/testes. Conferir CFOP, CST/CSOSN, CSC/Token, séries e impostos com a contabilidade antes de produção.')
+            uf=COALESCE(NULLIF(uf,''), :uf),
+            certificado_path=COALESCE(NULLIF(certificado_path,''), :certificado_path),
+            certificado_senha_env=COALESCE(NULLIF(certificado_senha_env,''), :certificado_senha_env),
+            regime=COALESCE(NULLIF(regime,''), :regime),
+            nf_serie=COALESCE(NULLIF(nf_serie,''), :nf_serie),
+            nf_numero_inicial=COALESCE(NULLIF(nf_numero_inicial,''), :nf_numero_inicial),
+            nfce_serie=COALESCE(NULLIF(nfce_serie,''), :nfce_serie),
+            nfce_numero_inicial=COALESCE(NULLIF(nfce_numero_inicial,''), :nfce_numero_inicial),
+            csc_id=COALESCE(NULLIF(csc_id,''), :csc_id),
+            csc_token=COALESCE(NULLIF(csc_token,''), :csc_token),
+            cfop_padrao=COALESCE(NULLIF(cfop_padrao,''), :cfop_padrao),
+            cst_csosn_padrao=COALESCE(NULLIF(cst_csosn_padrao,''), :cst_csosn_padrao),
+            observacao=COALESCE(NULLIF(observacao,''), :observacao)
         WHERE id=1
-    """)
+    """, FISCAL_DEFAULTS)
     backup_db("fiscal-padrao-homologacao")
-    flash("Preenchi o básico para homologação. Produção continua bloqueada até confirmar CSC/Token e regras fiscais reais.", "ok")
+    flash("Preenchi os dados fiscais recebidos e mantive em Homologação para teste.", "ok")
+    return redirect(url_for("fiscal"))
+
+@app.route("/fiscal/aplicar-fixos", methods=["POST"])
+@login_required
+def fiscal_aplicar_fixos():
+    """Força os dados fiscais base já recebidos: empresa, séries, CSC/Token e padrões de homologação."""
+    exec_sql("""
+        UPDATE fiscal_config SET
+            razao_social=:razao_social,
+            nome_fantasia=:nome_fantasia,
+            cnpj=:cnpj,
+            inscricao_estadual=:inscricao_estadual,
+            endereco=:endereco,
+            municipio=:municipio,
+            uf=:uf,
+            cep=:cep,
+            telefone=:telefone,
+            email=:email,
+            regime=:regime,
+            ambiente=:ambiente,
+            certificado_nome=:certificado_nome,
+            certificado_path=:certificado_path,
+            certificado_senha_env=:certificado_senha_env,
+            nf_serie=:nf_serie,
+            nf_numero_inicial=:nf_numero_inicial,
+            nfce_serie=:nfce_serie,
+            nfce_numero_inicial=:nfce_numero_inicial,
+            csc_id=:csc_id,
+            csc_token=:csc_token,
+            cfop_padrao=:cfop_padrao,
+            cst_csosn_padrao=:cst_csosn_padrao,
+            observacao=:observacao
+        WHERE id=1
+    """, FISCAL_DEFAULTS)
+    backup_db("fiscal-dados-fixos")
+    flash("Dados fiscais fixos da CENTRALVET aplicados novamente.", "ok")
     return redirect(url_for("fiscal"))
 
 @app.route("/fiscal/preencher-documentos", methods=["POST"])
