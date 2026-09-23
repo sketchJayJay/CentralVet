@@ -135,3 +135,9 @@ Esta versão foi configurada como PWA. Depois do deploy:
 5. Abra pelo atalho criado na área de trabalho ou menu Iniciar.
 
 O app abre sem a barra normal do navegador, com visual de aplicativo e manifestação em modo tela cheia/standalone.
+
+## Atualização - CFOP de devolução automático por XML
+- Ao importar o XML da nota de compra, o sistema verifica UF do fornecedor e sinais de ICMS-ST por produto.
+- Se o produto vier sem ST, sugere 5202 para MG ou 6202 para outro estado.
+- Se o produto vier com ST, sugere 5411 para MG ou 6411 para outro estado.
+- O campo continua editável por produto para exceções fiscais.

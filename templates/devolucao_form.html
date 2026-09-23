@@ -52,8 +52,9 @@
       <option value="outro_estado" {{ 'selected' if preview.tipo_sugerido == 'outro_estado' else '' }}>Outro estado</option>
     </select></div>
     <div><label>Substituição tributária</label><select name="substituicao_devolucao" id="stDev" onchange="atualizarCfopDev()">
-      <option value="sem_st">Sem ST / comum</option>
-      <option value="com_st">Com ST</option>
+      <option value="auto" {{ 'selected' if preview.substituicao_sugerida == 'auto' else '' }}>Detectar automaticamente pelo XML</option>
+      <option value="sem_st" {{ 'selected' if preview.substituicao_sugerida == 'sem_st' else '' }}>Sem ST / comum</option>
+      <option value="com_st" {{ 'selected' if preview.substituicao_sugerida == 'com_st' else '' }}>Com ST</option>
     </select></div>
     <div><label>CFOP devolução padrão</label><input name="cfop_devolucao_padrao" id="cfopDevPadrao" value="{{ preview.cfop_sugerido or '5202' }}" placeholder="Automático" oninput="aplicarCfopNosItens()"></div>
     <div><label>Baixar estoque agora?</label><select name="baixar_estoque"><option value="0">Não, só rascunho</option><option value="1">Sim, dar saída no estoque</option></select></div>
@@ -62,7 +63,7 @@
   <div class="card dark" style="margin-top:12px;padding:14px">
     <b>Assistente de CFOP:</b>
     <span style="color:#b9d7ee">mesmo estado sem ST → 5202 • outro estado sem ST → 6202 • mesmo estado com ST → 5411 • outro estado com ST → 6411.</span>
-    <br><small style="color:#9fb4c8">O CFOP continua editável por produto, caso alguma nota precise de ajuste específico.</small>
+    <br><small style="color:#9fb4c8">Detecção do XML: {{ preview.status_st_geral }} Produtos com ST: {{ preview.total_com_st }} • sem ST: {{ preview.total_sem_st }}. O CFOP continua editável por produto.</small>
   </div>
   <label style="margin-top:12px">Observação</label><input name="observacao" placeholder="Ex.: Produtos chegaram avariados, devolução ao fornecedor.">
 
@@ -77,8 +78,8 @@
         <td>{{ item.quantidade|num }} {{ item.unidade }}</td>
         <td><input name="qtd_devolver_{{ item.idx }}" value="{{ item.quantidade|num }}" style="min-width:110px"></td>
         <td>{{ item.valor_unitario|money }}</td>
-        <td><small>NCM {{ item.ncm or '-' }}<br>CFOP origem {{ item.cfop or '-' }}<br>CST/CSOSN {{ item.cst_csosn or '-' }}</small></td>
-        <td><input class="cfop-item-dev" name="cfop_devolucao_{{ item.idx }}" value="{{ preview.cfop_sugerido or '5202' }}" placeholder="Automático" style="min-width:120px"></td>
+        <td><small>NCM {{ item.ncm or '-' }}<br>CFOP origem {{ item.cfop or '-' }}<br>CST/CSOSN {{ item.cst_csosn or '-' }}<br><b>{{ item.status_st }}</b><br><span title="{{ item.motivo_st }}">{{ item.motivo_st }}</span></small></td>
+        <td><input class="cfop-item-dev" name="cfop_devolucao_{{ item.idx }}" value="{{ item.cfop_devolucao_sugerido or preview.cfop_sugerido or '5202' }}" data-auto-cfop="{{ item.cfop_devolucao_sugerido or preview.cfop_sugerido or '5202' }}" data-st="{{ item.modo_st or 'sem_st' }}" placeholder="Automático" style="min-width:120px"></td>
         <td><span class="pill {{ 'green' if item.produto_id else 'warn' }}">{{ item.produto_status }}</span><br><small>Estoque atual: {{ item.produto_estoque|num }}</small></td>
       </tr>
       {% endfor %}
@@ -94,11 +95,15 @@
 {% endblock %}
 {% block scripts %}
 <script>
+function cfopPorTipoSt(tipo, st){
+  if(st === 'com_st') return tipo === 'outro_estado' ? '6411' : '5411';
+  return tipo === 'outro_estado' ? '6202' : '5202';
+}
 function cfopDevolucaoSugerido(){
   const tipo = document.getElementById('tipoOperacaoDev')?.value || 'mesmo_estado';
   const st = document.getElementById('stDev')?.value || 'sem_st';
-  if(st === 'com_st') return tipo === 'outro_estado' ? '6411' : '5411';
-  return tipo === 'outro_estado' ? '6202' : '5202';
+  if(st === 'auto') return document.querySelector('.cfop-item-dev')?.dataset.autoCfop || cfopPorTipoSt(tipo, 'sem_st');
+  return cfopPorTipoSt(tipo, st);
 }
 function regraCfopTexto(cfop){
   const mapa = {
@@ -119,7 +124,36 @@ function aplicarCfopNosItens(){
   const regra = document.getElementById('regraCfopDev');
   if(regra) regra.value = regraCfopTexto(cfop);
 }
+function aplicarCfopAutomaticoPorProduto(){
+  let primeiro = '';
+  let misto = false;
+  document.querySelectorAll('.cfop-item-dev').forEach(inp=>{
+    const cfop = inp.dataset.autoCfop || '';
+    if(!primeiro) primeiro = cfop;
+    if(primeiro && cfop && cfop !== primeiro) misto = true;
+    if(!inp.dataset.manual || inp.value.trim()==='' || ['5202','6202','5411','6411'].includes(inp.value.trim())){
+      inp.value = cfop || primeiro || '5202';
+    }
+  });
+  const campo = document.getElementById('cfopDevPadrao');
+  if(campo && primeiro) campo.value = primeiro;
+  const regra = document.getElementById('regraCfopDev');
+  if(regra) regra.value = misto ? 'Automático pelo XML: CFOP definido por produto' : regraCfopTexto(primeiro);
+}
+function atualizarAutoCfopPorOperacao(){
+  const tipo = document.getElementById('tipoOperacaoDev')?.value || 'mesmo_estado';
+  document.querySelectorAll('.cfop-item-dev').forEach(inp=>{
+    const stItem = inp.dataset.st || 'sem_st';
+    inp.dataset.autoCfop = cfopPorTipoSt(tipo, stItem);
+  });
+}
 function atualizarCfopDev(){
+  atualizarAutoCfopPorOperacao();
+  const st = document.getElementById('stDev')?.value || 'sem_st';
+  if(st === 'auto'){
+    aplicarCfopAutomaticoPorProduto();
+    return;
+  }
   const cfop = cfopDevolucaoSugerido();
   const campo = document.getElementById('cfopDevPadrao');
   if(campo) campo.value = cfop;

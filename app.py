@@ -199,12 +199,55 @@ def xml_float(v):
     except Exception:
         return 0.0
 
+ST_CST_CODES = {"10", "30", "60", "70"}
+ST_CSOSN_CODES = {"201", "202", "203", "500"}
+ST_VALUE_FIELDS = [
+    "vBCST", "vICMSST", "vBCSTRet", "vICMSSTRet",
+    "vBCFCPST", "vFCPST", "vBCFCPSTRet", "vFCPSTRet"
+]
+ST_CFOP_COMPRA = {"1403", "2403"}
+
 def get_product_tax(det):
     for key in ["CSOSN", "CST"]:
         val = xml_first_text(det, key, "")
         if val:
             return val
     return ""
+
+def analisar_st_produto(det, cfop_origem=""):
+    """Detecta se o item da nota veio com ICMS-ST.
+
+    A detecção usa o XML original da compra: CST/CSOSN, valores próprios de ST
+    e CFOPs comuns de compra com ST. Isso evita perguntar ao contador em cada
+    devolução, mas mantém o campo editável para exceções.
+    """
+    cst = xml_first_text(det, "CST", "").strip()
+    csosn = xml_first_text(det, "CSOSN", "").strip()
+    cfop = str(cfop_origem or "").strip()
+    motivos = []
+
+    if cst in ST_CST_CODES:
+        motivos.append(f"CST {cst}")
+    if csosn in ST_CSOSN_CODES:
+        motivos.append(f"CSOSN {csosn}")
+    if cfop in ST_CFOP_COMPRA:
+        motivos.append(f"CFOP origem {cfop}")
+
+    campos_valor = []
+    for campo in ST_VALUE_FIELDS:
+        valor_txt = xml_first_text(det, campo, "")
+        if valor_txt != "" and xml_float(valor_txt) > 0:
+            campos_valor.append(campo)
+    if campos_valor:
+        motivos.append("valores de ST: " + ", ".join(campos_valor))
+
+    tem_st = bool(motivos)
+    return {
+        "tem_st": tem_st,
+        "modo_st": "com_st" if tem_st else "sem_st",
+        "status_st": "Com ST" if tem_st else "Sem ST / comum",
+        "motivo_st": "; ".join(motivos) if motivos else "Não foram encontrados CST/CSOSN ou valores de ICMS-ST no item.",
+    }
 
 def parse_nfe_xml(xml_bytes):
     """Extrai os principais dados de XML NF-e/NFC-e de entrada."""
@@ -241,18 +284,24 @@ def parse_nfe_xml(xml_bytes):
         prod = xml_first(det, "prod")
         if prod is None:
             continue
+        cfop_origem = xml_first_text(prod, "CFOP")
+        st_info = analisar_st_produto(det, cfop_origem)
         item = {
             "codigo": xml_first_text(prod, "cProd"),
             "ean": xml_first_text(prod, "cEAN") or xml_first_text(prod, "cEANTrib"),
             "nome": xml_first_text(prod, "xProd"),
             "ncm": xml_first_text(prod, "NCM"),
             "cest": xml_first_text(prod, "CEST"),
-            "cfop": xml_first_text(prod, "CFOP"),
+            "cfop": cfop_origem,
             "unidade": xml_first_text(prod, "uCom") or xml_first_text(prod, "uTrib") or "UN",
             "quantidade": xml_float(xml_first_text(prod, "qCom") or xml_first_text(prod, "qTrib")),
             "valor_unitario": xml_float(xml_first_text(prod, "vUnCom") or xml_first_text(prod, "vUnTrib")),
             "valor_total": xml_float(xml_first_text(prod, "vProd")),
-            "cst_csosn": get_product_tax(det)
+            "cst_csosn": get_product_tax(det),
+            "tem_st": st_info["tem_st"],
+            "modo_st": st_info["modo_st"],
+            "status_st": st_info["status_st"],
+            "motivo_st": st_info["motivo_st"],
         }
         if item["nome"]:
             dados["itens"].append(item)
@@ -1312,11 +1361,38 @@ def nova_devolucao():
                 d["produto_estoque"] = prod["estoque"] if prod else 0
                 d["produto_status"] = "Encontrado no cadastro" if prod else "Ainda não cadastrado"
                 itens.append(d)
-        empresa_uf = os.environ.get("UF_EMPRESA", "MG").strip() or "MG"
+        empresa_uf = os.environ.get("UF_EMPRESA", FISCAL_DEFAULTS.get("uf", "MG")).strip() or "MG"
         fornecedor_uf = (dados.get("fornecedor_uf") or "").strip()
-        tipo_sugerido = "outro_estado" if fornecedor_uf and fornecedor_uf != empresa_uf else "mesmo_estado"
-        cfop_sugerido = sugerir_cfop_devolucao(tipo_sugerido, "sem_st")
-        preview = {"dados": dados, "itens": itens, "xml_hash": xml_hash, "empresa_uf": empresa_uf, "tipo_sugerido": tipo_sugerido, "cfop_sugerido": cfop_sugerido}
+        tipo_sugerido = "outro_estado" if fornecedor_uf and fornecedor_uf.upper() != empresa_uf.upper() else "mesmo_estado"
+
+        total_com_st = 0
+        total_sem_st = 0
+        cfops_detectados = []
+        for item in itens:
+            modo_st = item.get("modo_st") or "sem_st"
+            if modo_st == "com_st":
+                total_com_st += 1
+            else:
+                total_sem_st += 1
+            item["cfop_devolucao_sugerido"] = sugerir_cfop_devolucao(tipo_sugerido, modo_st)
+            cfops_detectados.append(item["cfop_devolucao_sugerido"])
+
+        if total_com_st and total_sem_st:
+            status_st_geral = "Misto: há itens com ST e itens sem ST. O sistema preenche por produto."
+        elif total_com_st:
+            status_st_geral = "Com ST detectado no XML."
+        else:
+            status_st_geral = "Sem ST / comum detectado no XML."
+        substituicao_sugerida = "auto"
+
+        # CFOP padrão usado como fallback. Cada produto já recebe o CFOP detectado individualmente.
+        cfop_sugerido = cfops_detectados[0] if cfops_detectados else sugerir_cfop_devolucao(tipo_sugerido, "sem_st")
+        preview = {
+            "dados": dados, "itens": itens, "xml_hash": xml_hash, "empresa_uf": empresa_uf,
+            "tipo_sugerido": tipo_sugerido, "cfop_sugerido": cfop_sugerido,
+            "substituicao_sugerida": substituicao_sugerida, "status_st_geral": status_st_geral,
+            "total_com_st": total_com_st, "total_sem_st": total_sem_st,
+        }
     return render_template("devolucao_form.html", preview=preview, encoded_xml=encoded_xml, hoje=today_str(), empresa_uf=os.environ.get("UF_EMPRESA", "MG"))
 
 @app.route("/devolucoes/salvar", methods=["POST"])
@@ -1339,9 +1415,13 @@ def salvar_devolucao():
     tipo_operacao_devolucao = (request.form.get("tipo_operacao_devolucao") or "mesmo_estado").strip()
     substituicao_devolucao = (request.form.get("substituicao_devolucao") or "sem_st").strip()
     if not cfop_devolucao_padrao:
-        cfop_devolucao_padrao = sugerir_cfop_devolucao(tipo_operacao_devolucao, substituicao_devolucao)
+        modo_fallback = "sem_st" if substituicao_devolucao == "auto" else substituicao_devolucao
+        cfop_devolucao_padrao = sugerir_cfop_devolucao(tipo_operacao_devolucao, modo_fallback)
     obs = request.form.get("observacao") or ""
-    obs_info = f"Assistente CFOP: {'outro estado' if tipo_operacao_devolucao == 'outro_estado' else 'mesmo estado'} / {'com ST' if substituicao_devolucao == 'com_st' else 'sem ST'} / CFOP sugerido {cfop_devolucao_padrao}."
+    if substituicao_devolucao == "auto":
+        obs_info = f"Assistente CFOP automático: XML analisado por produto; operação {'outro estado' if tipo_operacao_devolucao == 'outro_estado' else 'mesmo estado'}; fallback {cfop_devolucao_padrao}."
+    else:
+        obs_info = f"Assistente CFOP: {'outro estado' if tipo_operacao_devolucao == 'outro_estado' else 'mesmo estado'} / {'com ST' if substituicao_devolucao == 'com_st' else 'sem ST'} / CFOP sugerido {cfop_devolucao_padrao}."
     obs = (obs + " | " + obs_info).strip(" |")
     selecionados = 0
     with get_db() as db:
@@ -1367,7 +1447,9 @@ def salvar_devolucao():
             qtd_original = float(item.get("quantidade") or 0)
             if qtd_original > 0 and qtd_dev > qtd_original:
                 qtd_dev = qtd_original
-            cfop_dev = request.form.get(f"cfop_devolucao_{idx}") or cfop_devolucao_padrao
+            cfop_dev = (request.form.get(f"cfop_devolucao_{idx}") or "").strip()
+            if not cfop_dev:
+                cfop_dev = sugerir_cfop_devolucao(tipo_operacao_devolucao, item.get("modo_st") or ("sem_st" if substituicao_devolucao == "auto" else substituicao_devolucao)) or cfop_devolucao_padrao
             prod = find_product_for_xml_item(db, item)
             produto_id = prod["id"] if prod else None
             valor_unit = float(item.get("valor_unitario") or 0)
