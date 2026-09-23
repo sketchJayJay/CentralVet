@@ -95,3 +95,14 @@ Ele completa campos provisórios para homologação quando a contabilidade demor
 - Ambiente: Homologação
 
 Importante: esses dados são para teste/homologação. O sistema mantém produção bloqueada se faltar CSC/Token, séries, CFOP/CST/CSOSN, certificado ou senha.
+
+## Atualização fiscal com documentos da CENTRALVET
+Esta versão já vem com preenchimento dos dados cadastrais da empresa conforme documentos enviados:
+- Razão social: CENTRALVET AGROPECUARIA LTDA
+- Nome fantasia: CENTRALVET AGROPECUARIA
+- CNPJ: 68.690.225/0001-50
+- Inscrição Estadual: 005626088.00-49
+- Regime: SIMPLES NACIONAL
+- Endereço: R MANOEL FRANCISCO DE CASTRO, 21, B, CENTRO, ORIZANIA/MG, CEP 36.828-000
+
+Na tela Fiscal existe o botão “Preencher dados da empresa”. Ele restaura esses dados e mantém o ambiente em Homologação. Produção continua dependendo de CSC/Token, séries, CFOP/CST/CSOSN e regras fiscais corretas.

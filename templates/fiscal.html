@@ -8,6 +8,9 @@
     <a class="btn" href="{{ url_for('nova_devolucao') }}">Nota de devolução</a>
     <a class="btn secondary" href="{{ url_for('devolucoes') }}">Ver devoluções</a>
     <a class="btn secondary" href="{{ url_for('enviar_certificado') }}">Enviar certificado A1</a>
+    <form method="post" action="{{ url_for('fiscal_preencher_documentos') }}" style="display:inline" onsubmit="return confirm('Preencher dados da empresa com base nos documentos enviados? Isso mantém o sistema em Homologação.')">
+      <button type="submit" class="secondary">Preencher dados da empresa</button>
+    </form>
     <form method="post" action="{{ url_for('fiscal_preencher_padrao') }}" style="display:inline" onsubmit="return confirm('Preencher campos provisórios para homologação? Produção continuará bloqueada até validar com a contabilidade.')">
       <button type="submit" class="warn">Preencher básico p/ teste</button>
     </form>
@@ -59,7 +62,7 @@
 
 <div class="card">
 <h2>Dados da empresa</h2>
-<p style="color:#536b7f;margin-top:-6px">Preencha o que já souber. O botão “Preencher básico p/ teste” completa campos provisórios para homologação, sem liberar produção.</p>
+<p style="color:#536b7f;margin-top:-6px">Os dados principais já foram deixados com base nos documentos enviados. Use “Preencher dados da empresa” para restaurar os dados oficiais, se precisar. O botão “Preencher básico p/ teste” completa apenas campos provisórios de homologação.</p>
 <form method="post">
   <div class="row">
     <div><label>Razão social</label><input name="razao_social" value="{{cfg.razao_social or ''}}"></div>

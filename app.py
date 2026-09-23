@@ -427,11 +427,11 @@ def init_db():
             created_at TEXT DEFAULT CURRENT_TIMESTAMP
         );
         """)
-        # default fiscal config
+        # default fiscal config based on CENTRALVET documents
         db.execute("""
             INSERT OR IGNORE INTO fiscal_config
-            (id, razao_social, nome_fantasia, cnpj, ambiente, uf, municipio, certificado_path, certificado_senha_env)
-            VALUES (1, 'CENTRALVET AGROPECUÁRIA LTDA', 'CENTRALVET AGROPECUÁRIA', '68.690.225/0001-50', 'Homologação', 'MG', '', '/app/certs/centralvet_a1.pfx', 'CERTIFICADO_SENHA')
+            (id, razao_social, nome_fantasia, cnpj, inscricao_estadual, endereco, municipio, uf, cep, telefone, email, regime, ambiente, certificado_path, certificado_senha_env, observacao)
+            VALUES (1, 'CENTRALVET AGROPECUARIA LTDA', 'CENTRALVET AGROPECUARIA', '68.690.225/0001-50', '005626088.00-49', 'R MANOEL FRANCISCO DE CASTRO, 21, B, CENTRO', 'ORIZANIA', 'MG', '36.828-000', '(31) 3875-1342', 'CONTABILIDADEREIS01@HOTMAIL.COM', 'SIMPLES NACIONAL', 'Homologação', '/app/certs/centralvet_a1.pfx', 'CERTIFICADO_SENHA', 'Dados preenchidos pelos documentos enviados: CNPJ, inscrição estadual e contrato social. CNAE principal: 4683-4/00. Conferir CSC/Token, séries, CFOP/CST/CSOSN e impostos com a contabilidade antes de produção.')
         """)
         for column, ddl in [
             ('ean', 'TEXT'), ('cest', 'TEXT'), ('ultima_chave_xml', 'TEXT'), ('fornecedor_id', 'INTEGER')
@@ -444,6 +444,23 @@ def init_db():
         ]:
             add_column(db, 'fiscal_config', column, ddl)
         db.execute("UPDATE fiscal_config SET certificado_path=COALESCE(NULLIF(certificado_path,''), '/app/certs/centralvet_a1.pfx'), certificado_senha_env=COALESCE(NULLIF(certificado_senha_env,''), 'CERTIFICADO_SENHA') WHERE id=1")
+        # Fill only empty company fields on existing deployments, preserving any manual changes already made in the system.
+        db.execute("""
+            UPDATE fiscal_config SET
+              razao_social=COALESCE(NULLIF(razao_social,''), 'CENTRALVET AGROPECUARIA LTDA'),
+              nome_fantasia=COALESCE(NULLIF(nome_fantasia,''), 'CENTRALVET AGROPECUARIA'),
+              cnpj=COALESCE(NULLIF(cnpj,''), '68.690.225/0001-50'),
+              inscricao_estadual=COALESCE(NULLIF(inscricao_estadual,''), '005626088.00-49'),
+              endereco=COALESCE(NULLIF(endereco,''), 'R MANOEL FRANCISCO DE CASTRO, 21, B, CENTRO'),
+              municipio=COALESCE(NULLIF(municipio,''), 'ORIZANIA'),
+              uf=COALESCE(NULLIF(uf,''), 'MG'),
+              cep=COALESCE(NULLIF(cep,''), '36.828-000'),
+              telefone=COALESCE(NULLIF(telefone,''), '(31) 3875-1342'),
+              email=COALESCE(NULLIF(email,''), 'CONTABILIDADEREIS01@HOTMAIL.COM'),
+              regime=COALESCE(NULLIF(regime,''), 'SIMPLES NACIONAL'),
+              observacao=COALESCE(NULLIF(observacao,''), 'Dados preenchidos pelos documentos enviados: CNPJ, inscrição estadual e contrato social. CNAE principal: 4683-4/00. Conferir CSC/Token, séries, CFOP/CST/CSOSN e impostos com a contabilidade antes de produção.')
+            WHERE id=1
+        """)
         db.commit()
 
 init_db()
@@ -956,6 +973,33 @@ def fiscal_preencher_padrao():
     """)
     backup_db("fiscal-padrao-homologacao")
     flash("Preenchi o básico para homologação. Produção continua bloqueada até confirmar CSC/Token e regras fiscais reais.", "ok")
+    return redirect(url_for("fiscal"))
+
+@app.route("/fiscal/preencher-documentos", methods=["POST"])
+@login_required
+def fiscal_preencher_documentos():
+    """Preenche dados cadastrais da empresa com base nos documentos oficiais enviados.
+    Mantém emissão em homologação e não mexe em CSC/Token, séries ou regras fiscais.
+    """
+    exec_sql("""
+        UPDATE fiscal_config SET
+            razao_social='CENTRALVET AGROPECUARIA LTDA',
+            nome_fantasia='CENTRALVET AGROPECUARIA',
+            cnpj='68.690.225/0001-50',
+            inscricao_estadual='005626088.00-49',
+            endereco='R MANOEL FRANCISCO DE CASTRO, 21, B, CENTRO',
+            municipio='ORIZANIA',
+            uf='MG',
+            cep='36.828-000',
+            telefone='(31) 3875-1342',
+            email='CONTABILIDADEREIS01@HOTMAIL.COM',
+            regime='SIMPLES NACIONAL',
+            ambiente='Homologação',
+            observacao='Dados preenchidos pelos documentos enviados: CNPJ, inscrição estadual e contrato social. CNAE principal: 4683-4/00. Conferir CSC/Token, séries, CFOP/CST/CSOSN e impostos com a contabilidade antes de produção.'
+        WHERE id=1
+    """)
+    backup_db("fiscal-dados-documentos")
+    flash("Dados cadastrais preenchidos pelos documentos enviados. Mantive em Homologação por segurança.", "ok")
     return redirect(url_for("fiscal"))
 
 @app.route("/fiscal/certificado", methods=["GET", "POST"])
