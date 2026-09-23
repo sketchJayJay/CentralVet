@@ -141,3 +141,10 @@ O app abre sem a barra normal do navegador, com visual de aplicativo e manifesta
 - Se o produto vier sem ST, sugere 5202 para MG ou 6202 para outro estado.
 - Se o produto vier com ST, sugere 5411 para MG ou 6411 para outro estado.
 - O campo continua editável por produto para exceções fiscais.
+
+
+## Fluxo simplificado de devolução
+- Sem status de rascunho/emitida pelo contador/cancelada na interface.
+- Botão único: Emitir devolução e imprimir.
+- Após salvar, abre automaticamente a tela de impressão.
+- CFOP continua sugerido automaticamente pelo XML e pode ser ajustado antes da emissão.

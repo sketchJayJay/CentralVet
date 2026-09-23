@@ -8,7 +8,7 @@
 
 <div class="card dark">
   <h2>Fluxo recomendado</h2>
-  <p style="color:#b9d7ee">1) Importe o XML da compra original. 2) Selecione os produtos avariados. 3) Escolha se a devolução é para o mesmo estado ou outro estado. 4) O sistema sugere o CFOP e gera o rascunho.</p>
+  <p style="color:#b9d7ee">1) Importe o XML da compra original. 2) Selecione os produtos avariados. 3) Escolha se a devolução é para o mesmo estado ou outro estado. 4) O sistema sugere o CFOP. 5) Clique em Emitir e imprimir.</p>
 </div>
 
 {% if not preview %}
@@ -57,7 +57,7 @@
       <option value="com_st" {{ 'selected' if preview.substituicao_sugerida == 'com_st' else '' }}>Com ST</option>
     </select></div>
     <div><label>CFOP devolução padrão</label><input name="cfop_devolucao_padrao" id="cfopDevPadrao" value="{{ preview.cfop_sugerido or '5202' }}" placeholder="Automático" oninput="aplicarCfopNosItens()"></div>
-    <div><label>Baixar estoque agora?</label><select name="baixar_estoque"><option value="0">Não, só rascunho</option><option value="1">Sim, dar saída no estoque</option></select></div>
+    <div><label>Saída do estoque</label><select name="baixar_estoque"><option value="1" selected>Sim, baixar ao emitir</option><option value="0">Não baixar agora</option></select></div>
     <div style="grid-column:span 2"><label>Regra usada</label><input id="regraCfopDev" readonly value=""></div>
   </div>
   <div class="card dark" style="margin-top:12px;padding:14px">
@@ -87,7 +87,7 @@
     </table>
   </div>
   <div class="actions">
-    <button class="green">Gerar rascunho da devolução</button>
+    <button class="green">Emitir devolução e imprimir</button>
     <a class="btn secondary" href="{{ url_for('nova_devolucao') }}">Importar outro XML</a>
   </div>
 </form>

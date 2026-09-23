@@ -309,7 +309,7 @@ def parse_nfe_xml(xml_bytes):
 
 def sugerir_cfop_devolucao(tipo_operacao="mesmo_estado", substituicao="sem_st"):
     """Sugere CFOP de devolução de compra para mercadoria de revenda.
-    A regra serve para acelerar rascunhos e homologação; o campo fica editável por item.
+    A regra serve para acelerar a devolução; o campo fica editável por item.
     """
     tipo = (tipo_operacao or "mesmo_estado").strip()
     st = (substituicao or "sem_st").strip()
@@ -504,7 +504,7 @@ def init_db():
             emissao_origem TEXT,
             total_original REAL DEFAULT 0,
             motivo TEXT,
-            status TEXT DEFAULT 'Rascunho',
+            status TEXT DEFAULT 'Gerada',
             baixou_estoque INTEGER DEFAULT 0,
             nf_devolucao_numero TEXT,
             nf_devolucao_chave TEXT,
@@ -1433,7 +1433,7 @@ def salvar_devolucao():
         """, (
             request.form.get("data") or today_str(), dados.get("fornecedor_nome"), dados.get("fornecedor_cnpj"),
             dados.get("destinatario_nome"), dados.get("destinatario_cnpj"), dados.get("chave"), dados.get("numero"),
-            dados.get("serie"), dados.get("emissao"), dados.get("total"), motivo, "Rascunho", 1 if baixar_estoque else 0,
+            dados.get("serie"), dados.get("emissao"), dados.get("total"), motivo, "Gerada", 1 if baixar_estoque else 0,
             xml_hash, obs
         ))
         devolucao_id = cur.lastrowid
@@ -1477,8 +1477,8 @@ def salvar_devolucao():
             return redirect(url_for("nova_devolucao"))
         db.commit()
     backup_db("devolucao-criada")
-    flash("Devolução criada em rascunho. Confira os itens e envie os dados para o contador validar CFOP/CST antes da emissão real.", "ok")
-    return redirect(url_for("ver_devolucao", devolucao_id=devolucao_id))
+    flash("Devolução gerada. A tela de impressão foi aberta automaticamente.", "ok")
+    return redirect(url_for("ver_devolucao", devolucao_id=devolucao_id, imprimir=1))
 
 @app.route("/devolucoes/<int:devolucao_id>")
 @login_required
@@ -1491,15 +1491,6 @@ def ver_devolucao(devolucao_id):
     total = sum(float(i["valor_total"] or 0) for i in itens)
     return render_template("devolucao_detalhe.html", dev=dev, itens=itens, total=total)
 
-@app.route("/devolucoes/<int:devolucao_id>/emitida", methods=["POST"])
-@login_required
-def marcar_devolucao_emitida(devolucao_id):
-    exec_sql("UPDATE devolucoes SET status=?, nf_devolucao_numero=?, nf_devolucao_chave=? WHERE id=?",
-             (request.form.get("status") or "Emitida", request.form.get("nf_devolucao_numero") or "", request.form.get("nf_devolucao_chave") or "", devolucao_id))
-    backup_db("devolucao-status")
-    flash("Status da devolução atualizado.", "ok")
-    return redirect(url_for("ver_devolucao", devolucao_id=devolucao_id))
-
 @app.route("/devolucoes/<int:devolucao_id>/excluir", methods=["POST"])
 @login_required
 def excluir_devolucao(devolucao_id):
@@ -1507,9 +1498,6 @@ def excluir_devolucao(devolucao_id):
     if not dev:
         flash("Devolução não encontrada.", "erro")
         return redirect(url_for("devolucoes"))
-    if dev["status"] != "Rascunho":
-        flash("Só é possível excluir devolução em rascunho.", "erro")
-        return redirect(url_for("ver_devolucao", devolucao_id=devolucao_id))
     with get_db() as db:
         if dev["baixou_estoque"]:
             itens = db.execute("SELECT * FROM devolucao_itens WHERE devolucao_id=?", (devolucao_id,)).fetchall()
