@@ -147,3 +147,15 @@ Passos no notebook do caixa:
 5. Usar "Imprimir direto POS-5890U". O Edge não abre a prévia de página; os bytes vão direto para a impressora.
 
 O PDF 58 mm continua disponível apenas como reserva.
+
+## Logo no recibo POS-5890U
+- Logo CENTRALVET adicionada ao recibo simples ESC/POS.
+- Logo também aparece na impressão direta do DANFE NFC-e pela POS-5890U.
+- Raster monocromático otimizado para 384 dots / bobina 58 mm.
+- PDF térmico de contingência também recebe a logo.
+
+## Logo no recibo POS-5890U
+- Logo CENTRALVET adicionada ao recibo simples ESC/POS.
+- Logo também aparece na impressão direta do DANFE NFC-e pela POS-5890U.
+- Raster monocromático otimizado para 384 dots / bobina 58 mm.
+- PDF térmico de contingência também recebe a logo.

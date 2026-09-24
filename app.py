@@ -16,6 +16,8 @@ from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 from reportlab.pdfgen import canvas
 from reportlab.lib.units import mm
 from reportlab.pdfbase.pdfmetrics import stringWidth
+from reportlab.lib.utils import ImageReader
+from PIL import Image, ImageOps
 
 APP_NAME = "CENTRALVET Agropecuária"
 DATA_DIR = os.environ.get("DATA_DIR", os.path.join(os.path.dirname(__file__), "data"))
@@ -1807,6 +1809,54 @@ def _pos5890u_lr(left, right, width=32):
     return left + (" " * max(1, width - len(left) - len(right))) + right
 
 
+def _escpos_raster_logo(image_path=None, max_width=300, threshold=172):
+    """Converte a logo da CENTRALVET para raster ESC/POS monocromatico.
+
+    A POS-5890U imprime 384 pontos por linha. Usamos no maximo 300 pontos para
+    manter margem lateral e boa legibilidade do simbolo/texto.
+    """
+    if image_path is None:
+        image_path = os.path.join(os.path.dirname(__file__), "static", "centralvet_logo.png")
+    try:
+        im = Image.open(image_path).convert("RGBA")
+        alpha = im.getchannel("A")
+        bbox = alpha.getbbox()
+        if bbox:
+            im = im.crop(bbox)
+        bg = Image.new("RGBA", im.size, "white")
+        bg.alpha_composite(im)
+        gray = ImageOps.grayscale(bg.convert("RGB"))
+        gray = ImageOps.autocontrast(gray)
+        if gray.width > max_width:
+            ratio = max_width / float(gray.width)
+            new_h = max(1, int(round(gray.height * ratio)))
+            gray = gray.resize((max_width, new_h), Image.Resampling.LANCZOS)
+        # Limiar fixo deixa a marca nítida em cabeça térmica de 203 dpi.
+        bw = gray.point(lambda p: 0 if p < threshold else 255, mode="1")
+        width = bw.width
+        height = bw.height
+        width_bytes = (width + 7) // 8
+        data = bytearray()
+        pix = bw.load()
+        for y in range(height):
+            for xb in range(width_bytes):
+                byte = 0
+                for bit in range(8):
+                    x = xb * 8 + bit
+                    if x < width and pix[x, y] == 0:
+                        byte |= (1 << (7 - bit))
+                data.append(byte)
+        GS = b"\x1d"
+        header = GS + b"v0" + b"\x00" + bytes([
+            width_bytes & 0xff, (width_bytes >> 8) & 0xff,
+            height & 0xff, (height >> 8) & 0xff,
+        ])
+        return header + bytes(data)
+    except Exception:
+        # A venda nunca deve falhar por causa de uma imagem de cabecalho.
+        return b""
+
+
 def _escpos_qr(data, module=4):
     """Comandos ESC/POS QR Code Model 2, compatíveis com a maioria dos POS-58."""
     raw = str(data or '').encode('utf-8')
@@ -1879,7 +1929,11 @@ def build_nfce_pos5890u_escpos(xml_path):
     pay_names={'01':'Dinheiro','02':'Cheque','03':'Cartao credito','04':'Cartao debito','05':'Crediario','15':'Boleto','17':'PIX','99':'Outros'}
 
     ESC=b'\x1b'; GS=b'\x1d'; out=bytearray()
-    out += ESC+b'@' + ESC+b'a'+b'\x01' + ESC+b'E'+b'\x01'
+    out += ESC+b'@' + ESC+b'a'+b'\x01'
+    logo_bytes = _escpos_raster_logo()
+    if logo_bytes:
+        out += logo_bytes + b'\n'
+    out += ESC+b'E'+b'\x01'
     for line in _pos5890u_wrap(xNome): out += line.encode('ascii')+b'\n'
     out += ESC+b'E'+b'\x00'
     for line in _pos5890u_wrap(f'CNPJ: {cnpj} IE: {ie}'): out += line.encode('ascii')+b'\n'
@@ -1934,6 +1988,9 @@ def build_pos5890u_escpos(venda, itens):
     out = bytearray()
     out += ESC + b"@"                 # inicializa
     out += ESC + b"a" + b"\x01"       # centralizado
+    logo_bytes = _escpos_raster_logo()
+    if logo_bytes:
+        out += logo_bytes + b"\n"
     out += ESC + b"E" + b"\x01"       # negrito
     out += GS + b"!" + b"\x11"        # 2x largura/altura
     out += b"CENTRALVET\n"
@@ -2015,6 +2072,9 @@ def build_pos58_pdf(venda, itens):
 
     # Primeiro montamos uma lista de comandos para saber a altura exata do cupom.
     rows = []
+    logo_path = os.path.join(os.path.dirname(__file__), "static", "centralvet_logo.png")
+    logo_draw_w = 46 * mm
+    logo_draw_h = logo_draw_w * (440 / 1222)
     def add_text(text, size=8.2, bold=False, align="left", gap_after=1.4):
         font = bold_font if bold else normal_font
         for line in _thermal_wrap(text, font, size, usable):
@@ -2053,7 +2113,7 @@ def build_pos58_pdf(venda, itens):
         add_text("Recibo sem valor fiscal quando nao houver documento fiscal autorizado.", size=6.3, align="center", gap_after=0)
 
     top_bottom = 5 * mm
-    content_height = 0.0
+    content_height = logo_draw_h + (3 * mm)
     for row in rows:
         if row[0] == "text":
             content_height += row[5]
@@ -2070,6 +2130,12 @@ def build_pos58_pdf(venda, itens):
     out = BytesIO()
     pdf = canvas.Canvas(out, pagesize=(page_width, page_height), pageCompression=1)
     y = page_height - 3 * mm
+    try:
+        pdf.drawImage(ImageReader(logo_path), (page_width - logo_draw_w) / 2, y - logo_draw_h,
+                      width=logo_draw_w, height=logo_draw_h, preserveAspectRatio=True, mask='auto')
+        y -= logo_draw_h + (3 * mm)
+    except Exception:
+        pass
 
     for row in rows:
         kind = row[0]
