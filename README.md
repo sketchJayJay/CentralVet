@@ -1,6 +1,24 @@
-# CENTRALVET Agropecuária — NF-e direto com SEFAZ/MG
+# CENTRALVET Agropecuária — NF-e + NFC-e direto com SEFAZ/MG
 
 Esta versão inclui emissão de **NF-e modelo 55 de devolução diretamente na SEFAZ/MG**, sem provedor fiscal mensal.
+
+
+## Venda de balcão com NFC-e
+
+A venda agora pode ser enviada como **NFC-e modelo 65 diretamente para a SEFAZ/MG**.
+
+Fluxo:
+
+1. Salvar a venda normalmente.
+2. Abrir o recibo e clicar **Finalizar venda e emitir NFC-e**.
+3. O sistema monta o XML modelo 65, assina com o A1, insere o QR Code da NFC-e e envia à SEFAZ.
+4. Somente após autorização grava número, série, chave, protocolo, XML autorizado e DANFE NFC-e.
+5. O botão **Imprimir DANFE NFC-e na POS-5890U** envia o cupom fiscal em ESC/POS direto via QZ Tray, sem página gigante do Edge.
+6. Também ficam disponíveis **Abrir DANFE NFC-e** (PDF 58 mm) e **Baixar XML**.
+
+A numeração NFC-e é persistida em `/app/data/centralvet.db`. Não recrie o volume em redeploy.
+
+Antes de emitir, cada produto precisa ter NCM válido. A regra de saída usa o cadastro fiscal do produto e o padrão da empresa; rejeições da SEFAZ aparecem com `cStat`/motivo na própria venda.
 
 ## Fluxo da devolução
 

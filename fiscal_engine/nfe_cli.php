@@ -24,6 +24,7 @@ use NFePHP\NFe\Complements;
 use NFePHP\NFe\Make;
 use NFePHP\NFe\Tools;
 use NFePHP\DA\NFe\Danfe;
+use NFePHP\DA\NFe\Danfce;
 
 function out(array $data, int $code = 0): void {
     echo json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
@@ -82,7 +83,7 @@ function originalPercent(?DOMNode $det, string $tag): ?float {
     return $txt === '' ? null : (float)$txt;
 }
 
-function makeTools(array $p): Tools {
+function makeTools(array $p, int $model = 55): Tools {
     $issuer = $p['issuer'] ?? [];
     $tpAmb = (int)($p['tpAmb'] ?? 2);
     $certPath = s($p['cert_path'] ?? '');
@@ -114,7 +115,7 @@ function makeTools(array $p): Tools {
     ];
     $cert = Certificate::readPfx(file_get_contents($certPath), $certPass);
     $tools = new Tools(json_encode($config, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), $cert);
-    $tools->model(55);
+    $tools->model($model);
     if (method_exists($tools, 'setVerAplic')) {
         $tools->setVerAplic('CENTRALVET-1.0');
     }
@@ -164,6 +165,306 @@ try {
             'tpAmb' => (string)($std->tpAmb ?? $tpAmb),
             'verAplic' => (string)($std->verAplic ?? '')
         ]);
+    }
+
+    if ($action === 'emit_nfce') {
+        $issuer = $p['issuer'] ?? [];
+        $tpAmb = (int)($p['tpAmb'] ?? 2);
+        $items = $p['items'] ?? [];
+        if (!is_array($items) || count($items) < 1) throw new RuntimeException('Nenhum item informado para a NFC-e.');
+
+        $schema = 'PL_010_V1';
+        $mk = new Make($schema);
+        $mk->setOnlyAscii(false);
+        $mk->setCheckGtin(false);
+
+        $inf = new stdClass();
+        $inf->versao = '4.00';
+        $inf->Id = null;
+        $inf->pk_nItem = null;
+        $mk->taginfNFe($inf);
+
+        $issueIso = s($p['issue_datetime'] ?? '');
+        if (!$issueIso) $issueIso = (new DateTime('now', new DateTimeZone('America/Sao_Paulo')))->format('c');
+        $ide = (object)[
+            'cUF' => 31,
+            'cNF' => s($p['cNF'] ?? '') ?: null,
+            'natOp' => 'VENDA DE MERCADORIA',
+            'mod' => 65,
+            'serie' => (int)($p['serie'] ?? 1),
+            'nNF' => (int)($p['nNF'] ?? 1),
+            'dhEmi' => $issueIso,
+            'dhSaiEnt' => null,
+            'dPrevEntrega' => null,
+            'tpNF' => 1,
+            'idDest' => 1,
+            'cMunFG' => (int)digits($issuer['codigo_municipio'] ?? '3145877'),
+            'cMunFGIBS' => null,
+            'tpImp' => 4,
+            'tpEmis' => 1,
+            'cDV' => null,
+            'tpAmb' => $tpAmb,
+            'finNFe' => 1,
+            'tpNFDebito' => null,
+            'tpNFCredito' => null,
+            'indFinal' => 1,
+            'indPres' => 1,
+            'indIntermed' => 0,
+            'procEmi' => 0,
+            'verProc' => 'CENTRALVET-1.1',
+            'dhCont' => null,
+            'xJust' => null,
+        ];
+        $mk->tagide($ide);
+
+        $emit = (object)[
+            'xNome' => s($issuer['razao_social'] ?? ''),
+            'xFant' => s($issuer['nome_fantasia'] ?? ''),
+            'IE' => digits($issuer['inscricao_estadual'] ?? ''),
+            'IEST' => null,
+            'IM' => null,
+            'CNAE' => digits($issuer['cnae'] ?? '4683400'),
+            'CRT' => (int)($issuer['crt'] ?? 1),
+            'CNPJ' => digits($issuer['cnpj'] ?? ''),
+            'CPF' => null,
+        ];
+        if (strlen($emit->CNPJ) !== 14 || !$emit->IE || !$emit->xNome) throw new RuntimeException('Dados do emitente incompletos na Configuração Fiscal.');
+        $mk->tagEmit($emit);
+        $enderEmit = (object)[
+            'xLgr' => s($issuer['logradouro'] ?? 'R MANOEL FRANCISCO DE CASTRO'),
+            'nro' => s($issuer['numero'] ?? '21'),
+            'xCpl' => s($issuer['complemento'] ?? 'B') ?: null,
+            'xBairro' => s($issuer['bairro'] ?? 'CENTRO'),
+            'cMun' => (int)digits($issuer['codigo_municipio'] ?? '3145877'),
+            'xMun' => s($issuer['municipio'] ?? 'ORIZANIA'),
+            'UF' => strtoupper(s($issuer['uf'] ?? 'MG')),
+            'CEP' => digits($issuer['cep'] ?? ''),
+            'cPais' => 1058,
+            'xPais' => 'BRASIL',
+            'fone' => digits($issuer['telefone'] ?? '') ?: null,
+        ];
+        $mk->tagenderEmit($enderEmit);
+
+        $customer = $p['customer'] ?? [];
+        $docCustomer = digits($customer['documento'] ?? '');
+        if (in_array(strlen($docCustomer), [11,14], true)) {
+            $dest = (object)[
+                'xNome' => s($customer['nome'] ?? '') ?: 'CONSUMIDOR',
+                'CNPJ' => strlen($docCustomer) === 14 ? $docCustomer : null,
+                'CPF' => strlen($docCustomer) === 11 ? $docCustomer : null,
+                'idEstrangeiro' => null,
+                'indIEDest' => 9,
+                'IE' => null,
+                'ISUF' => null,
+                'IM' => null,
+                'email' => s($customer['email'] ?? '') ?: null,
+            ];
+            $mk->tagdest($dest);
+        }
+
+        $sumProdutos = 0.0;
+        $sumDesconto = 0.0;
+        $seq = 0;
+        foreach ($items as $it) {
+            $seq++;
+            $qtd = f($it['quantidade'] ?? 0);
+            $vUn = f($it['valor_unitario'] ?? 0);
+            $vProd = round(f($it['valor_produto'] ?? ($qtd * $vUn)), 2);
+            $vDesc = round(f($it['desconto'] ?? 0), 2);
+            if ($qtd <= 0 || $vUn < 0 || $vProd < 0) throw new RuntimeException("Quantidade/valor inválido no item {$seq}.");
+            $ncm = digits($it['ncm'] ?? '');
+            if (!(strlen($ncm) === 8 || strlen($ncm) === 2)) throw new RuntimeException('NCM ausente ou inválido no produto: ' . s($it['nome'] ?? $seq));
+            $ean = digits($it['ean'] ?? '');
+            if (!in_array(strlen($ean), [8,12,13,14], true)) $ean = 'SEM GTIN';
+            $cest = digits($it['cest'] ?? '');
+            if (strlen($cest) !== 7) $cest = null;
+            $cfop = digits($it['cfop'] ?? '5102');
+            if (strlen($cfop) !== 4) $cfop = '5102';
+            $nome = s($it['nome'] ?? 'PRODUTO');
+            if ($tpAmb === 2) $nome = 'NOTA FISCAL EMITIDA EM AMBIENTE DE HOMOLOGACAO - SEM VALOR FISCAL';
+
+            $prod = new stdClass();
+            $prod->item = $seq;
+            $prod->cProd = s($it['codigo'] ?? '') ?: (string)$seq;
+            $prod->cEAN = $ean;
+            $prod->cBarra = null;
+            $prod->xProd = $nome;
+            $prod->NCM = $ncm;
+            $prod->CEST = $cest;
+            $prod->indEscala = null;
+            $prod->CNPJFab = null;
+            $prod->cBenef = null;
+            $prod->tpCredPresIBSZFM = null;
+            $prod->EXTIPI = null;
+            $prod->CFOP = $cfop;
+            $prod->uCom = s($it['unidade'] ?? '') ?: 'UN';
+            $prod->qCom = $qtd;
+            $prod->vUnCom = $vUn;
+            $prod->vProd = $vProd;
+            $prod->cEANTrib = $ean;
+            $prod->uTrib = $prod->uCom;
+            $prod->qTrib = $qtd;
+            $prod->vUnTrib = $vUn;
+            $prod->vFrete = null;
+            $prod->vSeg = null;
+            $prod->vDesc = $vDesc > 0 ? $vDesc : null;
+            $prod->vOutro = null;
+            $prod->indTot = 1;
+            $prod->indBemMovelUsado = null;
+            $prod->xPed = null;
+            $prod->nItemPed = null;
+            $prod->nFCI = null;
+            $prod->vItem = null;
+            $mk->tagprod($prod);
+
+            $imp = (object)['item' => $seq, 'vTotTrib' => null];
+            $mk->tagimposto($imp);
+
+            $csosn = digits($it['csosn'] ?? '102');
+            if (!in_array($csosn, ['101','102','103','201','202','203','300','400','500','900'], true)) $csosn = '102';
+            $ic = new stdClass();
+            $ic->item = $seq;
+            $ic->orig = s($it['orig'] ?? '0') ?: '0';
+            $ic->CSOSN = $csosn;
+            $ic->pCredSN = null;
+            $ic->vCredICMSSN = null;
+            $ic->modBCST = null;
+            $ic->pMVAST = null;
+            $ic->pRedBCST = null;
+            $ic->vBCST = null;
+            $ic->pICMSST = null;
+            $ic->vICMSST = null;
+            $ic->vBCFCPST = null;
+            $ic->pFCPST = null;
+            $ic->vFCPST = null;
+            $ic->vBCSTRet = $csosn === '500' ? 0.00 : null;
+            $ic->pST = null;
+            $ic->vICMSSTRet = $csosn === '500' ? 0.00 : null;
+            $ic->vBCFCPSTRet = null;
+            $ic->pFCPSTRet = null;
+            $ic->vFCPSTRet = null;
+            $ic->modBC = null;
+            $ic->vBC = null;
+            $ic->pRedBC = null;
+            $ic->pICMS = null;
+            $ic->vICMS = null;
+            $ic->pRedBCEfet = null;
+            $ic->vBCEfet = null;
+            $ic->pICMSEfet = null;
+            $ic->vICMSEfet = null;
+            $ic->vICMSSubstituto = null;
+            $mk->tagICMSSN($ic);
+
+            $pis = new stdClass();
+            $pis->item = $seq;
+            $pis->CST = '49';
+            $pis->vBC = 0.00;
+            $pis->pPIS = 0.00;
+            $pis->vPIS = 0.00;
+            $pis->qBCProd = null;
+            $pis->vAliqProd = null;
+            $mk->tagPIS($pis);
+
+            $cof = new stdClass();
+            $cof->item = $seq;
+            $cof->CST = '49';
+            $cof->vBC = 0.00;
+            $cof->pCOFINS = 0.00;
+            $cof->vCOFINS = 0.00;
+            $cof->qBCProd = null;
+            $cof->vAliqProd = null;
+            $mk->tagCOFINS($cof);
+
+            $sumProdutos += $vProd;
+            $sumDesconto += $vDesc;
+        }
+
+        $mk->tagICMSTot(new stdClass());
+        $mk->tagtransp((object)['modFrete' => 9]);
+        $mk->tagpag((object)['vTroco' => valOrNull(f($p['troco'] ?? 0))]);
+        $mk->tagdetpag((object)[
+            'indPag' => (int)($p['indPag'] ?? 0),
+            'tPag' => s($p['tPag'] ?? '01') ?: '01',
+            'vPag' => round(f($p['valor_pago'] ?? ($sumProdutos - $sumDesconto)), 2),
+            'xPag' => s($p['xPag'] ?? '') ?: null,
+            'dPag' => null,
+            'tpIntegra' => null,
+            'CNPJPag' => null,
+            'UFPag' => null,
+            'CNPJReceb' => null,
+            'idTermPag' => null,
+        ]);
+        $mk->taginfadic((object)[
+            'infAdFisco' => null,
+            'infCpl' => s($p['informacoes_complementares'] ?? '') ?: null,
+        ]);
+
+        $xml = $mk->getXML();
+        $makeErrors = $mk->getErrors();
+        if (!empty($makeErrors)) throw new RuntimeException('Erro ao montar a NFC-e: ' . implode(' | ', array_slice($makeErrors, 0, 8)));
+        if (!$xml) throw new RuntimeException('Falha ao montar o XML da NFC-e.');
+
+        $tools = makeTools($p, 65);
+        $signed = $tools->signNFe($xml);
+        $signedDom = new DOMDocument();
+        $signedDom->loadXML($signed);
+        $infSigned = firstNode(new DOMXPath($signedDom), '//*[local-name()="infNFe"]');
+        $idSigned = $infSigned instanceof DOMElement ? (string)$infSigned->getAttribute('Id') : '';
+        $chaveGerada = preg_replace('/^NFe/', '', $idSigned);
+
+        $outputDir = s($p['output_dir'] ?? '');
+        if (!$outputDir) throw new RuntimeException('Diretório de saída fiscal não informado.');
+        if (!is_dir($outputDir) && !mkdir($outputDir, 0770, true) && !is_dir($outputDir)) throw new RuntimeException('Não foi possível criar o diretório fiscal.');
+        $baseName = 'NFCe-' . str_pad((string)((int)($p['nNF'] ?? 1)), 9, '0', STR_PAD_LEFT) . '-serie-' . str_pad((string)((int)($p['serie'] ?? 1)), 3, '0', STR_PAD_LEFT);
+        $signedPath = $outputDir . '/' . $baseName . '-assinado.xml';
+        file_put_contents($signedPath, $signed);
+
+        $idLoteSeed = digits((string)($p['lote_id'] ?? '')) ?: (string)time();
+        $idLote = str_pad(substr($idLoteSeed, -15), 15, '0', STR_PAD_LEFT);
+        $response = $tools->sefazEnviaLote([$signed], $idLote, 1);
+        $respObj = (new Standardize($response))->toStd();
+        $loteCstat = (string)($respObj->cStat ?? '');
+        $loteMotivo = (string)($respObj->xMotivo ?? '');
+        if ($loteCstat === '103' && isset($respObj->infRec->nRec)) {
+            $response = $tools->sefazConsultaRecibo((string)$respObj->infRec->nRec);
+            $respObj = (new Standardize($response))->toStd();
+            $loteCstat = (string)($respObj->cStat ?? '');
+            $loteMotivo = (string)($respObj->xMotivo ?? '');
+        }
+        if ($loteCstat !== '104') out(['ok'=>true,'authorized'=>false,'cStat'=>$loteCstat,'xMotivo'=>$loteMotivo ?: 'Lote não processado pela SEFAZ.','chave'=>$chaveGerada,'signed_xml_path'=>$signedPath,'raw_response'=>$response]);
+
+        $prot = $respObj->protNFe->infProt ?? null;
+        $cStat = (string)($prot->cStat ?? '');
+        $xMotivo = (string)($prot->xMotivo ?? '');
+        $chave = (string)($prot->chNFe ?? $chaveGerada);
+        $nProt = (string)($prot->nProt ?? '');
+        $authorized = in_array($cStat, ['100','150'], true);
+        if (!$authorized && $cStat === '204' && strlen(digits($chaveGerada)) === 44) {
+            $consulta = $tools->sefazConsultaChave($chaveGerada);
+            $consObj = (new Standardize($consulta))->toStd();
+            $consProt = $consObj->protNFe->infProt ?? null;
+            $consCStat = (string)($consProt->cStat ?? $consObj->cStat ?? '');
+            if (in_array($consCStat, ['100','150'], true)) {
+                $response = $consulta;
+                $authorized = true;
+                $cStat = $consCStat;
+                $xMotivo = (string)($consProt->xMotivo ?? $consObj->xMotivo ?? 'Autorizada');
+                $chave = (string)($consProt->chNFe ?? $chaveGerada);
+                $nProt = (string)($consProt->nProt ?? '');
+            }
+        }
+        if (!$authorized) out(['ok'=>true,'authorized'=>false,'cStat'=>$cStat,'xMotivo'=>$xMotivo ?: 'NFC-e rejeitada pela SEFAZ.','chave'=>$chave,'signed_xml_path'=>$signedPath,'raw_response'=>$response]);
+
+        $authorizedXml = Complements::toAuthorize($signed, $response);
+        $xmlPath = $outputDir . '/' . $baseName . '-autorizado.xml';
+        file_put_contents($xmlPath, $authorizedXml);
+        $danfce = new Danfce($authorizedXml);
+        $danfce->setPaperWidth(58);
+        $danfce->setMargins(1);
+        $pdf = $danfce->render();
+        $pdfPath = $outputDir . '/' . $baseName . '-DANFCE.pdf';
+        file_put_contents($pdfPath, $pdf);
+        out(['ok'=>true,'authorized'=>true,'cStat'=>$cStat,'xMotivo'=>$xMotivo,'chave'=>$chave,'protocolo'=>$nProt,'xml_path'=>$xmlPath,'danfe_path'=>$pdfPath,'signed_xml_path'=>$signedPath,'tpAmb'=>$tpAmb]);
     }
 
     if ($action !== 'emit_return') throw new RuntimeException('Ação fiscal desconhecida.');

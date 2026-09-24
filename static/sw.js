@@ -1,4 +1,4 @@
-const CACHE_NAME = 'centralvet-pos5890u-escpos-v1';
+const CACHE_NAME = 'centralvet-nfce-sefaz-pos5890u-v1';
 const STATIC_ASSETS = [
   '/static/style.css',
   '/static/centralvet_logo.png',

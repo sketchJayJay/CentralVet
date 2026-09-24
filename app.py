@@ -25,9 +25,11 @@ BACKUP_DIR = os.path.join(DATA_DIR, "backups")
 FISCAL_DIR = os.path.join(DATA_DIR, "fiscal")
 FISCAL_ORIGINAL_DIR = os.path.join(FISCAL_DIR, "originais")
 FISCAL_NFE_DIR = os.path.join(FISCAL_DIR, "nfe")
+FISCAL_NFCE_DIR = os.path.join(FISCAL_DIR, "nfce")
 os.makedirs(BACKUP_DIR, exist_ok=True)
 os.makedirs(FISCAL_ORIGINAL_DIR, exist_ok=True)
 os.makedirs(FISCAL_NFE_DIR, exist_ok=True)
+os.makedirs(FISCAL_NFCE_DIR, exist_ok=True)
 
 # Segunda cópia de segurança em /app/certs.
 # No Coolify, /app/certs já precisa ser persistente para manter o A1; por isso
@@ -658,6 +660,162 @@ def emitir_devolucao_sefaz_internal(devolucao_id):
             db.commit()
     return result
 
+
+def _nfce_payment_code(forma):
+    txt = _pos5890u_ascii(forma or '').lower()
+    if 'pix' in txt:
+        return '17', None
+    if 'credito' in txt or 'crédito' in str(forma or '').lower():
+        return '03', None
+    if 'debito' in txt or 'débito' in str(forma or '').lower():
+        return '04', None
+    if 'dinheiro' in txt or 'especie' in txt:
+        return '01', None
+    if 'cheque' in txt:
+        return '02', None
+    if 'crediario' in txt or 'crediário' in str(forma or '').lower():
+        return '05', None
+    if 'boleto' in txt:
+        return '15', None
+    return '99', str(forma or 'Outros')[:60] or 'Outros'
+
+
+def _nfce_sale_tax(prod, cfg):
+    """Sugere a tributação de saída do Simples a partir do cadastro do produto.
+
+    O cadastro pode ter vindo de XML de compra (CST do fornecedor). Para a saída
+    da CENTRALVET, CST 60/10/30/70 ou CSOSN 500 indicam mercadoria já alcançada
+    por ST e são convertidos para CSOSN 500. Demais itens usam o padrão 102.
+    """
+    raw = only_digits(prod['cst_csosn'] if prod else '')
+    allowed = {'101','102','103','201','202','203','300','400','500','900'}
+    if raw in allowed:
+        csosn = raw
+    elif raw in {'10','30','60','70'}:
+        csosn = '500'
+    else:
+        cfg_default = only_digits(cfg_val(cfg, 'cst_csosn_padrao')) or '102'
+        csosn = cfg_default if cfg_default in allowed else '102'
+    manual_cfop = only_digits(prod['cfop'] if prod else '')
+    if len(manual_cfop) == 4 and manual_cfop.startswith('5'):
+        cfop = manual_cfop
+    else:
+        cfop = '5405' if csosn == '500' else '5102'
+    return csosn, cfop
+
+
+def emitir_nfce_sefaz_internal(venda_id):
+    cfg = fetch_one("SELECT * FROM fiscal_config WHERE id=1")
+    venda = fetch_one("SELECT * FROM vendas WHERE id=?", (venda_id,))
+    itens = fetch_all("""
+        SELECT vi.*, p.codigo, p.unidade, p.ncm, p.cfop, p.cst_csosn, p.ean, p.cest
+        FROM venda_itens vi LEFT JOIN produtos p ON p.id=vi.produto_id
+        WHERE vi.venda_id=? ORDER BY vi.id
+    """, (venda_id,))
+    if not cfg or not venda or not itens:
+        return {'ok': False, 'authorized': False, 'error': 'Venda ou configuração fiscal não encontrada.'}
+    if cfg_val(venda, 'nf_status') == 'Autorizada SEFAZ' and cfg_val(venda, 'nf_protocolo'):
+        return {
+            'ok': True, 'authorized': True, 'cStat': cfg_val(venda, 'nf_cstat') or '100',
+            'xMotivo': cfg_val(venda, 'nf_motivo') or 'Autorizada', 'chave': cfg_val(venda, 'nf_chave'),
+            'protocolo': cfg_val(venda, 'nf_protocolo'), 'xml_path': cfg_val(venda, 'nf_xml_path'),
+            'danfe_path': cfg_val(venda, 'nf_danfe_path')
+        }
+
+    cert = cert_runtime_status()
+    if not cert.get('exists'):
+        return {'ok': False, 'authorized': False, 'error': f"Certificado A1 não encontrado em {cert.get('path') or 'CERTIFICADO_PATH'}."}
+    if not cert.get('has_password'):
+        return {'ok': False, 'authorized': False, 'error': 'A variável CERTIFICADO_SENHA não está configurada no Coolify.'}
+    if not cfg_val(cfg, 'csc_id') or not cfg_val(cfg, 'csc_token'):
+        return {'ok': False, 'authorized': False, 'error': 'CSC/ID Token da NFC-e não estão configurados.'}
+
+    serie = int(only_digits(cfg_val(cfg, 'nfce_serie') or '1') or 1)
+    current_num = int(only_digits(cfg_val(cfg, 'nfce_numero_inicial') or '1') or 1)
+    saved_num = only_digits(cfg_val(venda, 'nf_numero'))
+    nnf = int(saved_num) if saved_num else current_num
+    issue_dt = cfg_val(venda, 'nf_emissao_tentativa_em')
+    if not issue_dt:
+        issue_dt = datetime.now(ZoneInfo('America/Sao_Paulo')).isoformat(timespec='seconds')
+        exec_sql("UPDATE vendas SET nf_emissao_tentativa_em=?, nf_numero=?, nf_serie=?, nf_tipo='NFC-e' WHERE id=?",
+                 (issue_dt, str(nnf), str(serie), venda_id))
+    else:
+        exec_sql("UPDATE vendas SET nf_numero=?, nf_serie=?, nf_tipo='NFC-e' WHERE id=?", (str(nnf), str(serie), venda_id))
+
+    subtotal = sum(float(i['total'] or 0) for i in itens)
+    desconto_total = max(0.0, float(venda['desconto'] or 0))
+    descontos = []
+    restante = round(desconto_total, 2)
+    for idx, i in enumerate(itens):
+        if idx == len(itens)-1:
+            d = restante
+        else:
+            base = float(i['total'] or 0)
+            d = round(desconto_total * (base / subtotal), 2) if subtotal > 0 else 0.0
+            d = min(d, restante)
+            restante = round(restante - d, 2)
+        descontos.append(max(0.0, d))
+
+    fiscal_items = []
+    for idx, i in enumerate(itens):
+        prod = i
+        ncm = only_digits(i['ncm'] or '')
+        if len(ncm) not in (2,8):
+            return {'ok': False, 'authorized': False, 'error': f"O produto '{i['produto_nome']}' está sem NCM válido. Edite o produto antes de emitir a NFC-e."}
+        csosn, cfop = _nfce_sale_tax(prod, cfg)
+        fiscal_items.append({
+            'codigo': i['codigo'] or str(i['produto_id'] or idx+1),
+            'nome': i['produto_nome'], 'ean': i['ean'] or '', 'ncm': ncm, 'cest': i['cest'] or '',
+            'cfop': cfop, 'csosn': csosn, 'orig': '0', 'unidade': normalizar_unidade(i['unidade']),
+            'quantidade': float(i['quantidade'] or 0), 'valor_unitario': float(i['preco_unit'] or 0),
+            'valor_produto': float(i['total'] or 0), 'desconto': descontos[idx],
+        })
+
+    customer = {}
+    if venda['cliente_id']:
+        cli = fetch_one("SELECT * FROM clientes WHERE id=?", (venda['cliente_id'],))
+        if cli:
+            customer = {'nome': cli['nome'] or venda['cliente_nome'], 'documento': cli['cpf_cnpj'] or '', 'email': cli['email'] or ''}
+
+    tpag, xpag = _nfce_payment_code(venda['forma_pagamento'])
+    cNF = str(int(hashlib.sha256(f"NFCE:{only_digits(cfg_val(cfg,'cnpj'))}:{serie}:{nnf}:{venda_id}".encode()).hexdigest()[:12], 16) % 100000000).zfill(8)
+    output_dir = os.path.join(FISCAL_NFCE_DIR, str(venda_id))
+    os.makedirs(output_dir, exist_ok=True)
+    payload = fiscal_engine_base_payload(cfg)
+    payload.update({
+        'action': 'emit_nfce', 'serie': serie, 'nNF': nnf, 'cNF': cNF, 'issue_datetime': issue_dt,
+        'lote_id': f"65{venda_id}{nnf}", 'output_dir': output_dir, 'customer': customer,
+        'tPag': tpag, 'xPag': xpag, 'indPag': 0, 'valor_pago': float(venda['total'] or 0), 'troco': 0,
+        'informacoes_complementares': f"Venda #{venda_id} - CENTRALVET Agropecuaria",
+        'items': fiscal_items,
+    })
+    result = run_fiscal_engine(payload, timeout=120)
+    now = datetime.now(ZoneInfo('America/Sao_Paulo')).isoformat(timespec='seconds')
+    if result.get('authorized'):
+        with get_db() as db:
+            db.execute("""
+                UPDATE vendas SET nf_tipo='NFC-e', nf_status='Autorizada SEFAZ', nf_numero=?, nf_serie=?,
+                    nf_chave=?, nf_protocolo=?, nf_xml_path=?, nf_danfe_path=?, nf_cstat=?, nf_motivo=?,
+                    nf_autorizado_em=?, nf_obs=? WHERE id=?
+            """, (str(nnf), str(serie), result.get('chave') or '', result.get('protocolo') or '',
+                  result.get('xml_path') or '', result.get('danfe_path') or '', result.get('cStat') or '100',
+                  result.get('xMotivo') or 'Autorizado o uso da NFC-e', now,
+                  'NFC-e autorizada diretamente pela SEFAZ/MG.', venda_id))
+            db.execute("UPDATE fiscal_config SET nfce_numero_inicial=? WHERE id=1", (str(max(current_num, nnf + 1)),))
+            db.commit()
+        backup_db('nfce-autorizada')
+    else:
+        motivo = result.get('xMotivo') or result.get('error') or 'Falha não identificada na autorização da NFC-e.'
+        cstat = str(result.get('cStat') or '')
+        with get_db() as db:
+            db.execute("""
+                UPDATE vendas SET nf_tipo='NFC-e', nf_status=?, nf_numero=?, nf_serie=?, nf_cstat=?, nf_motivo=?, nf_obs=? WHERE id=?
+            """, ('Rejeitada SEFAZ' if cstat else 'Falha antes do envio à SEFAZ', str(nnf), str(serie), cstat, motivo, motivo, venda_id))
+            db.commit()
+        backup_db('nfce-falha')
+    return result
+
+
 def init_db():
     with get_db() as db:
         db.executescript("""
@@ -864,7 +1022,9 @@ def init_db():
             ('status', "TEXT DEFAULT 'Pago'"), ('subtotal', 'REAL DEFAULT 0'), ('desconto', 'REAL DEFAULT 0'),
             ('total', 'REAL DEFAULT 0'), ('lucro', 'REAL DEFAULT 0'), ('observacao', 'TEXT'), ('nf_tipo', 'TEXT'),
             ('nf_status', "TEXT DEFAULT 'Não emitida'"), ('nf_numero', 'TEXT'), ('nf_obs', 'TEXT'),
-            ('created_at', 'TEXT')
+            ('nf_serie', 'TEXT'), ('nf_chave', 'TEXT'), ('nf_protocolo', 'TEXT'), ('nf_xml_path', 'TEXT'),
+            ('nf_danfe_path', 'TEXT'), ('nf_cstat', 'TEXT'), ('nf_motivo', 'TEXT'), ('nf_autorizado_em', 'TEXT'),
+            ('nf_emissao_tentativa_em', 'TEXT'), ('created_at', 'TEXT')
         ]:
             add_column(db, 'vendas', column, ddl)
         for column, ddl in [
@@ -1647,6 +1807,121 @@ def _pos5890u_lr(left, right, width=32):
     return left + (" " * max(1, width - len(left) - len(right))) + right
 
 
+def _escpos_qr(data, module=4):
+    """Comandos ESC/POS QR Code Model 2, compatíveis com a maioria dos POS-58."""
+    raw = str(data or '').encode('utf-8')
+    if not raw:
+        return b''
+    GS = b'\x1d'
+    out = bytearray()
+    out += GS + b'(k' + bytes([4,0,49,65,50,0])       # model 2
+    out += GS + b'(k' + bytes([3,0,49,67,max(1,min(8,int(module)))])
+    out += GS + b'(k' + bytes([3,0,49,69,49])         # ECC M
+    length = len(raw) + 3
+    out += GS + b'(k' + bytes([length & 0xff, (length >> 8) & 0xff, 49,80,48]) + raw
+    out += GS + b'(k' + bytes([3,0,49,81,48])
+    return bytes(out)
+
+
+def _nfce_xml_value(root, tag, default=''):
+    if root is None:
+        return default
+    for el in root.iter():
+        if el.tag.split('}')[-1] == tag:
+            return (el.text or '').strip()
+    return default
+
+
+def build_nfce_pos5890u_escpos(xml_path):
+    root = ET.parse(xml_path).getroot()
+    def first(parent, tag):
+        if parent is None: return None
+        for el in parent.iter():
+            if el.tag.split('}')[-1] == tag: return el
+        return None
+    inf = first(root, 'infNFe')
+    emit = first(inf, 'emit')
+    ide = first(inf, 'ide')
+    total = first(inf, 'ICMSTot')
+    dest = first(inf, 'dest')
+    prot = first(root, 'infProt')
+    qr = _nfce_xml_value(root, 'qrCode', '')
+    key = ((inf.attrib.get('Id') or '') if inf is not None else '').replace('NFe','')
+    nNF = _nfce_xml_value(ide, 'nNF', '')
+    serie = _nfce_xml_value(ide, 'serie', '')
+    dhEmi = _nfce_xml_value(ide, 'dhEmi', '')
+    vNF = _nfce_xml_value(total, 'vNF', '0')
+    protocolo = _nfce_xml_value(prot, 'nProt', '')
+    xNome = _nfce_xml_value(emit, 'xNome', 'CENTRALVET AGROPECUARIA')
+    cnpj = _nfce_xml_value(emit, 'CNPJ', '')
+    ie = _nfce_xml_value(emit, 'IE', '')
+    ender = first(emit, 'enderEmit')
+    endereco = ' '.join(x for x in [
+        _nfce_xml_value(ender,'xLgr',''), _nfce_xml_value(ender,'nro',''),
+        _nfce_xml_value(ender,'xBairro',''), _nfce_xml_value(ender,'xMun',''), _nfce_xml_value(ender,'UF','')
+    ] if x)
+    consumer_doc = _nfce_xml_value(dest, 'CPF', '') or _nfce_xml_value(dest, 'CNPJ', '')
+    consumer_name = _nfce_xml_value(dest, 'xNome', '')
+
+    dets=[]
+    for el in inf.iter() if inf is not None else []:
+        if el.tag.split('}')[-1] != 'det': continue
+        prod=first(el,'prod')
+        dets.append({
+            'nome':_nfce_xml_value(prod,'xProd','PRODUTO'), 'qtd':_nfce_xml_value(prod,'qCom','0'),
+            'unit':_nfce_xml_value(prod,'vUnCom','0'), 'total':_nfce_xml_value(prod,'vProd','0'),
+            'desc':_nfce_xml_value(prod,'vDesc','0')
+        })
+    pays=[]
+    for el in inf.iter() if inf is not None else []:
+        if el.tag.split('}')[-1]=='detPag':
+            pays.append((_nfce_xml_value(el,'tPag',''),_nfce_xml_value(el,'vPag','0')))
+    pay_names={'01':'Dinheiro','02':'Cheque','03':'Cartao credito','04':'Cartao debito','05':'Crediario','15':'Boleto','17':'PIX','99':'Outros'}
+
+    ESC=b'\x1b'; GS=b'\x1d'; out=bytearray()
+    out += ESC+b'@' + ESC+b'a'+b'\x01' + ESC+b'E'+b'\x01'
+    for line in _pos5890u_wrap(xNome): out += line.encode('ascii')+b'\n'
+    out += ESC+b'E'+b'\x00'
+    for line in _pos5890u_wrap(f'CNPJ: {cnpj} IE: {ie}'): out += line.encode('ascii')+b'\n'
+    for line in _pos5890u_wrap(endereco): out += line.encode('ascii')+b'\n'
+    out += b'-'*32+b'\n'
+    out += ESC+b'E'+b'\x01' + b'DANFE NFC-e\n' + ESC+b'E'+b'\x00'
+    out += b'Documento Auxiliar da NFC-e\n'
+    out += b'NAO PERMITE APROVEITAMENTO DE CREDITO\n'
+    out += ESC+b'a'+b'\x00' + b'-'*32+b'\n'
+    for d in dets:
+        for line in _pos5890u_wrap(d['nome']): out += line.encode('ascii')+b'\n'
+        try:
+            qtd=_thermal_num(float(d['qtd'])); unit=_thermal_money(float(d['unit'])); tot=_thermal_money(float(d['total'])-float(d['desc'] or 0))
+        except Exception:
+            qtd=d['qtd']; unit=d['unit']; tot=d['total']
+        out += _pos5890u_lr(f'{qtd} x {unit}', tot).encode('ascii')+b'\n'
+    out += b'-'*32+b'\n' + ESC+b'E'+b'\x01'
+    out += _pos5890u_lr('TOTAL', _thermal_money(float(vNF or 0))).encode('ascii')+b'\n' + ESC+b'E'+b'\x00'
+    for code,val in pays:
+        try: vtxt=_thermal_money(float(val or 0))
+        except Exception: vtxt=val
+        out += _pos5890u_lr(pay_names.get(code,code or 'Pagamento'),vtxt).encode('ascii')+b'\n'
+    out += b'-'*32+b'\n'
+    if consumer_doc or consumer_name:
+        for line in _pos5890u_wrap(f'Consumidor: {consumer_name} {consumer_doc}'.strip()): out += line.encode('ascii')+b'\n'
+    else:
+        out += b'CONSUMIDOR NAO IDENTIFICADO\n'
+    out += ESC+b'a'+b'\x01'
+    for line in _pos5890u_wrap(f'NFC-e {nNF} Serie {serie}'): out += line.encode('ascii')+b'\n'
+    for line in _pos5890u_wrap(f'Emissao: {dhEmi[:19].replace("T"," ")}'): out += line.encode('ascii')+b'\n'
+    out += b'CHAVE DE ACESSO\n'
+    key_fmt=' '.join(key[i:i+4] for i in range(0,len(key),4))
+    for line in _pos5890u_wrap(key_fmt): out += line.encode('ascii')+b'\n'
+    if protocolo:
+        for line in _pos5890u_wrap(f'Protocolo: {protocolo}'): out += line.encode('ascii')+b'\n'
+    if qr:
+        out += b'\n' + _escpos_qr(qr,3) + b'\n'
+        out += b'Consulte pelo QR Code\n'
+    out += ESC+b'a'+b'\x00' + b'\n\n\n'
+    return bytes(out)
+
+
 def build_pos5890u_escpos(venda, itens):
     """Gera bytes ESC/POS para POS-5890U, 58 mm / 384 dots.
 
@@ -1718,7 +1993,8 @@ def api_venda_pos5890u(venda_id):
     if not venda:
         return jsonify({"ok": False, "erro": "Venda nao encontrada."}), 404
     itens = fetch_all("SELECT * FROM venda_itens WHERE venda_id=? ORDER BY id", (venda_id,))
-    payload = build_pos5890u_escpos(venda, itens)
+    xml_path = fiscal_safe_file(venda['nf_xml_path']) if venda['nf_status'] == 'Autorizada SEFAZ' else None
+    payload = build_nfce_pos5890u_escpos(xml_path) if xml_path else build_pos5890u_escpos(venda, itens)
     return jsonify({
         "ok": True,
         "modelo": "POS-5890U",
@@ -1860,14 +2136,47 @@ def emitir_fiscal(venda_id):
     if not venda:
         flash("Venda não encontrada.", "erro")
         return redirect(url_for("vendas"))
-    # Estrutura pronta para integração. Nesta primeira versão, marca como pré-nota/fila de emissão.
-    nf_tipo = request.form.get("nf_tipo") or venda["nf_tipo"] or "NFC-e"
-    nf_num = f"PRE-{venda_id:06d}"
-    exec_sql("UPDATE vendas SET nf_tipo=?, nf_status='Pré-nota gerada', nf_numero=?, nf_obs=? WHERE id=?",
-             (nf_tipo, nf_num, "Documento preparado para emissão fiscal após configuração de certificado e ambiente fiscal.", venda_id))
-    backup_db("fiscal")
-    flash(f"{nf_tipo} preparada como {nf_num}.", "ok")
+    nf_tipo = request.form.get("nf_tipo") or "NFC-e"
+    if nf_tipo != "NFC-e":
+        flash("Para venda de balcão, use NFC-e. A NF-e modelo 55 continua no fluxo de devolução.", "erro")
+        return redirect(url_for("recibo_venda", venda_id=venda_id))
+    result = emitir_nfce_sefaz_internal(venda_id)
+    if result.get('authorized'):
+        flash(f"NFC-e autorizada ✅ Nº {fetch_one('SELECT nf_numero FROM vendas WHERE id=?',(venda_id,))['nf_numero']} • cStat {result.get('cStat') or '100'}", 'ok')
+    else:
+        prefix = 'SEFAZ rejeitou a NFC-e' if result.get('cStat') else 'Falha antes do envio à SEFAZ'
+        flash(f"{prefix}: cStat {result.get('cStat') or '-'} - {result.get('xMotivo') or result.get('error') or 'erro desconhecido'}", 'erro')
     return redirect(url_for("recibo_venda", venda_id=venda_id))
+
+
+@app.route("/vendas/<int:venda_id>/nfce/danfe")
+@login_required
+def venda_nfce_danfe(venda_id):
+    venda = fetch_one("SELECT * FROM vendas WHERE id=?", (venda_id,))
+    if not venda or venda['nf_status'] != 'Autorizada SEFAZ':
+        flash('Esta venda ainda não possui NFC-e autorizada.', 'erro')
+        return redirect(url_for('recibo_venda', venda_id=venda_id))
+    path = fiscal_safe_file(venda['nf_danfe_path'])
+    if not path:
+        flash('DANFE NFC-e não encontrado no armazenamento.', 'erro')
+        return redirect(url_for('recibo_venda', venda_id=venda_id))
+    return send_file(path, mimetype='application/pdf', as_attachment=False,
+                     download_name=f"DANFCE-{venda['nf_numero'] or venda_id}.pdf")
+
+
+@app.route("/vendas/<int:venda_id>/nfce/xml")
+@login_required
+def venda_nfce_xml(venda_id):
+    venda = fetch_one("SELECT * FROM vendas WHERE id=?", (venda_id,))
+    if not venda or venda['nf_status'] != 'Autorizada SEFAZ':
+        flash('Esta venda ainda não possui NFC-e autorizada.', 'erro')
+        return redirect(url_for('recibo_venda', venda_id=venda_id))
+    path = fiscal_safe_file(venda['nf_xml_path'])
+    if not path:
+        flash('XML autorizado não encontrado no armazenamento.', 'erro')
+        return redirect(url_for('recibo_venda', venda_id=venda_id))
+    return send_file(path, mimetype='application/xml', as_attachment=True,
+                     download_name=f"NFCe-{venda['nf_chave'] or venda_id}.xml")
 
 @app.route("/api/produtos")
 @login_required

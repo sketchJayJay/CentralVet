@@ -2,18 +2,29 @@
 {% block content %}
 <div class="hide-print actions" style="align-items:center;gap:10px;flex-wrap:wrap">
   <a class="btn secondary" href="{{ url_for('vendas') }}">Voltar</a>
-  <button type="button" class="btn green" id="btn-pos5890u" onclick="imprimirPOS5890U({{ venda.id }})">Imprimir direto POS-5890U</button>
+  {% if venda.nf_status == 'Autorizada SEFAZ' %}
+    <button type="button" class="btn green" id="btn-pos5890u" onclick="imprimirPOS5890U({{ venda.id }})">Imprimir DANFE NFC-e na POS-5890U</button>
+    <a class="btn secondary" target="_blank" href="{{ url_for('venda_nfce_danfe', venda_id=venda.id) }}">Abrir DANFE NFC-e</a>
+    <a class="btn secondary" href="{{ url_for('venda_nfce_xml', venda_id=venda.id) }}">Baixar XML</a>
+  {% else %}
+    <form method="post" action="{{ url_for('emitir_fiscal', venda_id=venda.id) }}" style="display:inline" onsubmit="return confirmarEmissaoNFCe(this)">
+      <input type="hidden" name="nf_tipo" value="NFC-e">
+      <button class="btn green" id="btn-emitir-nfce">Finalizar venda e emitir NFC-e</button>
+    </form>
+    <button type="button" class="btn secondary" id="btn-pos5890u" onclick="imprimirPOS5890U({{ venda.id }})">Imprimir recibo simples</button>
+  {% endif %}
   <button type="button" class="btn secondary" onclick="conectarPOS5890U()">Conectar impressora</button>
-  <a class="btn secondary" target="_blank" href="{{ url_for('cupom_termico_pdf', venda_id=venda.id) }}">PDF 58 mm (reserva)</a>
-  <button onclick="window.print()" class="secondary">Imprimir A4 / salvar PDF</button>
-  <form method="post" action="{{ url_for('emitir_fiscal', venda_id=venda.id) }}" style="display:inline">
-    <select name="nf_tipo" style="width:auto"><option>NFC-e</option><option>NF-e</option></select>
-    <button>Preparar nota fiscal</button>
-  </form>
 </div>
 
 <div class="hide-print card" style="margin:12px 0;padding:14px 16px">
   <b>Impressora térmica:</b> POS-5890U • bobina 57,5/58 mm • ESC/POS • 384 pontos/linha<br>
+  {% if venda.nf_status == 'Autorizada SEFAZ' %}
+    <b style="color:#087f5b">NFC-e autorizada ✅ Nº {{ venda.nf_numero }} • Série {{ venda.nf_serie or '1' }}</b><br>
+    <small>Chave: {{ venda.nf_chave or '-' }}{% if venda.nf_protocolo %}<br>Protocolo: {{ venda.nf_protocolo }}{% endif %}</small><br>
+  {% elif venda.nf_status and venda.nf_status != 'Não emitida' %}
+    <b style="color:#b42318">{{ venda.nf_status }}{% if venda.nf_cstat %} • cStat {{ venda.nf_cstat }}{% endif %}</b><br>
+    <small>{{ venda.nf_motivo or venda.nf_obs or '' }}</small><br>
+  {% endif %}
   <span id="pos5890-status" style="font-size:13px">Clique em “Conectar impressora” na primeira vez neste notebook.</span>
   <div id="pos5890-ajuda" style="display:none;margin-top:8px;font-size:13px">
     Para impressão direta sem a folha gigante do Edge, instale e deixe aberto o <b>QZ Tray</b> neste notebook.
@@ -40,12 +51,24 @@
   <p><b>Pagamento:</b> {{ venda.forma_pagamento }} • {{ venda.status }}</p>
   {% if venda.observacao %}<p><b>Observação:</b> {{ venda.observacao }}</p>{% endif %}
   <hr>
-  <p style="font-size:12px">Documento sem valor fiscal quando a NF-e/NFC-e ainda não estiver autorizada. A emissão fiscal real depende da configuração fiscal/certificado e ambiente de emissão.</p>
+  {% if venda.nf_status == 'Autorizada SEFAZ' %}
+  <p style="font-size:12px"><b>NFC-e autorizada pela SEFAZ.</b> Use “Imprimir DANFE NFC-e na POS-5890U” para o documento fiscal com QR Code.</p>
+  {% else %}
+  <p style="font-size:12px">Este recibo simples não tem valor fiscal. Para a venda fiscal, clique em <b>Finalizar venda e emitir NFC-e</b>.</p>
+  {% endif %}
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/qz-tray@2.3.0/qz-tray.js"></script>
 <script>
 let centralvetPosPrinter = localStorage.getItem('centralvet_pos5890u_printer') || '';
+
+function confirmarEmissaoNFCe(form) {
+  const btn = document.getElementById('btn-emitir-nfce');
+  if (btn && btn.disabled) return false;
+  if (!confirm('Emitir esta venda como NFC-e agora? O sistema enviará o documento para autorização da SEFAZ/MG.')) return false;
+  if (btn) { btn.disabled = true; btn.textContent = 'Enviando para SEFAZ...'; }
+  return true;
+}
 
 function posStatus(msg, ok) {
   const el = document.getElementById('pos5890-status');
