@@ -114,7 +114,7 @@ function makeTools(array $p): Tools {
     ];
     $cert = Certificate::readPfx(file_get_contents($certPath), $certPass);
     $tools = new Tools(json_encode($config, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), $cert);
-    $tools->model('55');
+    $tools->model(55);
     if (method_exists($tools, 'setVerAplic')) {
         $tools->setVerAplic('CENTRALVET-1.0');
     }
