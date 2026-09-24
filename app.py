@@ -839,13 +839,219 @@ def init_db():
 init_db()
 
 
-def recover_devolucao_files():
-    """Reconecta registros antigos aos XMLs/DANFEs persistidos em /app/data após upgrades.
+def _xml_local(node, name):
+    for child in node.iter():
+        if child.tag.split('}')[-1] == name:
+            return child
+    return None
 
-    Versões anteriores já gravavam os arquivos em fiscal/nfe/<id>, mas nem sempre
-    registravam o caminho no banco. Esta rotina não cria nota nem altera numeração;
-    apenas reaponta arquivos que já existem no volume persistente.
-    """
+
+def _xml_text(node, name, default=""):
+    found = _xml_local(node, name) if node is not None else None
+    return (found.text or "").strip() if found is not None and found.text else default
+
+
+def _parse_authorized_return_xml(path):
+    """Extrai os dados necessários de uma NF-e de devolução já autorizada."""
+    try:
+        root = ET.parse(path).getroot()
+        inf = None
+        prot = None
+        for node in root.iter():
+            lname = node.tag.split('}')[-1]
+            if lname == 'infNFe' and inf is None:
+                inf = node
+            elif lname == 'infProt' and prot is None:
+                prot = node
+        if inf is None or prot is None:
+            return None
+        ide = _xml_local(inf, 'ide')
+        emit = _xml_local(inf, 'emit')
+        dest = _xml_local(inf, 'dest')
+        total = _xml_local(inf, 'ICMSTot')
+        inf_adic = _xml_local(inf, 'infAdic')
+        cstat = _xml_text(prot, 'cStat')
+        if cstat not in ('100', '150'):
+            return None
+        emit_cnpj = only_digits(_xml_text(emit, 'CNPJ'))
+        if emit_cnpj and emit_cnpj != only_digits(FISCAL_DEFAULTS['cnpj']):
+            return None
+        natop = _xml_text(ide, 'natOp').upper()
+        finnfe = _xml_text(ide, 'finNFe')
+        if 'DEVOL' not in natop and finnfe != '4':
+            return None
+        ref_key = ''
+        nfref = _xml_local(ide, 'NFref')
+        if nfref is not None:
+            ref_key = only_digits(_xml_text(nfref, 'refNFe'))
+        chave = only_digits(_xml_text(prot, 'chNFe'))
+        if not chave:
+            chave = only_digits(inf.attrib.get('Id', '').replace('NFe', ''))
+        infcpl = _xml_text(inf_adic, 'infCpl')
+        motivo = 'Devolução de mercadoria'
+        if 'Motivo:' in infcpl:
+            motivo = infcpl.split('Motivo:', 1)[1].strip() or motivo
+        items = []
+        for det in [n for n in inf if n.tag.split('}')[-1] == 'det']:
+            prod = _xml_local(det, 'prod')
+            imposto = _xml_local(det, 'imposto')
+            icms = _xml_local(imposto, 'ICMS') if imposto is not None else None
+            cst = ''
+            if icms is not None:
+                cst = _xml_text(icms, 'CSOSN') or _xml_text(icms, 'CST')
+            q = money_to_float(_xml_text(prod, 'qCom'))
+            vu = money_to_float(_xml_text(prod, 'vUnCom'))
+            vt = money_to_float(_xml_text(prod, 'vProd')) or (q * vu)
+            items.append({
+                'codigo': _xml_text(prod, 'cProd'), 'ean': _xml_text(prod, 'cEAN'), 'nome': _xml_text(prod, 'xProd'),
+                'ncm': _xml_text(prod, 'NCM'), 'cest': _xml_text(prod, 'CEST'), 'cfop_original': '',
+                'cfop_devolucao': _xml_text(prod, 'CFOP'), 'cst_csosn': cst, 'unidade': _xml_text(prod, 'uCom') or 'UN',
+                'quantidade_original': q, 'quantidade_devolver': q, 'valor_unitario': vu, 'valor_total': vt,
+            })
+        return {
+            'data': (_xml_text(ide, 'dhEmi') or _xml_text(ide, 'dEmi') or '')[:10],
+            'fornecedor_nome': _xml_text(dest, 'xNome'),
+            'fornecedor_cnpj': _xml_text(dest, 'CNPJ') or _xml_text(dest, 'CPF'),
+            'chave_origem': ref_key,
+            'numero_origem': str(int(ref_key[25:34])) if len(ref_key) == 44 and ref_key[25:34].isdigit() else '',
+            'serie_origem': str(int(ref_key[22:25])) if len(ref_key) == 44 and ref_key[22:25].isdigit() else '',
+            'total': money_to_float(_xml_text(total, 'vNF')),
+            'motivo': motivo, 'nf_devolucao_numero': str(int(_xml_text(ide, 'nNF') or '0')),
+            'serie': str(int(_xml_text(ide, 'serie') or '1')), 'chave': chave, 'protocolo': _xml_text(prot, 'nProt'),
+            'cStat': cstat, 'xMotivo': _xml_text(prot, 'xMotivo') or 'Autorizado o uso da NF-e',
+            'autorizado_em': _xml_text(prot, 'dhRecbto') or _xml_text(ide, 'dhEmi'), 'items': items,
+        }
+    except Exception:
+        return None
+
+
+def _insert_recovered_return(data, xml_path='', danfe_path='', signed_path=''):
+    chave = only_digits(data.get('chave'))
+    if not chave:
+        return None
+    existing = fetch_one('SELECT * FROM devolucoes WHERE nf_devolucao_chave=? LIMIT 1', (chave,))
+    if existing:
+        updates = []
+        params = []
+        for col, val in [('xml_autorizado_path', xml_path), ('danfe_path', danfe_path), ('xml_assinado_path', signed_path)]:
+            if val and os.path.isfile(val) and not cfg_val(existing, col):
+                updates.append(f'{col}=?')
+                params.append(val)
+        if updates:
+            params.append(existing['id'])
+            exec_sql(f"UPDATE devolucoes SET {', '.join(updates)} WHERE id=?", params)
+        count = fetch_one('SELECT COUNT(*) c FROM devolucao_itens WHERE devolucao_id=?', (existing['id'],))['c']
+        if not count and data.get('items'):
+            with get_db() as db:
+                for idx, item in enumerate(data['items'], start=1):
+                    prod = db.execute('SELECT id FROM produtos WHERE codigo=? LIMIT 1', (item.get('codigo') or '',)).fetchone()
+                    db.execute("""INSERT INTO devolucao_itens
+                        (devolucao_id, produto_id, item_origem_idx, codigo, ean, nome, ncm, cest, cfop_original, cfop_devolucao, cst_csosn,
+                         unidade, quantidade_original, quantidade_devolver, valor_unitario, valor_total)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                        (existing['id'], prod['id'] if prod else None, idx, item.get('codigo'), item.get('ean'), item.get('nome'), item.get('ncm'),
+                         item.get('cest'), item.get('cfop_original'), item.get('cfop_devolucao'), item.get('cst_csosn'), item.get('unidade') or 'UN',
+                         item.get('quantidade_original') or item.get('quantidade_devolver') or 0, item.get('quantidade_devolver') or 0,
+                         item.get('valor_unitario') or 0, item.get('valor_total') or 0))
+                db.commit()
+        return existing['id']
+    with get_db() as db:
+        cur = db.execute("""INSERT INTO devolucoes
+            (data, fornecedor_nome, fornecedor_cnpj, destinatario_nome, destinatario_cnpj, chave_origem, numero_origem, serie_origem,
+             total_original, motivo, status, baixou_estoque, baixar_estoque_solicitado, nf_devolucao_numero, nf_devolucao_chave,
+             xml_hash, observacao, xml_assinado_path, xml_autorizado_path, danfe_path, protocolo_autorizacao, sefaz_cstat, sefaz_motivo,
+             autorizado_em, ambiente_emissao)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Autorizada SEFAZ', 1, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Produção')""",
+            (data.get('data') or today_str(), data.get('fornecedor_nome'), data.get('fornecedor_cnpj'),
+             FISCAL_DEFAULTS['razao_social'], FISCAL_DEFAULTS['cnpj'], data.get('chave_origem'), data.get('numero_origem'), data.get('serie_origem'),
+             data.get('total') or 0, data.get('motivo') or 'Devolução de mercadoria', data.get('nf_devolucao_numero'), chave,
+             hashlib.sha256((chave + '|recuperada').encode()).hexdigest(),
+             'NF-e autorizada recuperada automaticamente após atualização do sistema. Nenhuma nova emissão foi feita.',
+             signed_path or '', xml_path or '', danfe_path or '', data.get('protocolo') or '', data.get('cStat') or '100',
+             data.get('xMotivo') or 'Autorizado o uso da NF-e', data.get('autorizado_em') or ''))
+        devolucao_id = cur.lastrowid
+        for idx, item in enumerate(data.get('items') or [], start=1):
+            prod = db.execute('SELECT id FROM produtos WHERE codigo=? LIMIT 1', (item.get('codigo') or '',)).fetchone()
+            db.execute("""INSERT INTO devolucao_itens
+                (devolucao_id, produto_id, item_origem_idx, codigo, ean, nome, ncm, cest, cfop_original, cfop_devolucao, cst_csosn,
+                 unidade, quantidade_original, quantidade_devolver, valor_unitario, valor_total)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (devolucao_id, prod['id'] if prod else None, idx, item.get('codigo'), item.get('ean'), item.get('nome'), item.get('ncm'),
+                 item.get('cest'), item.get('cfop_original'), item.get('cfop_devolucao'), item.get('cst_csosn'), item.get('unidade') or 'UN',
+                 item.get('quantidade_original') or item.get('quantidade_devolver') or 0, item.get('quantidade_devolver') or 0,
+                 item.get('valor_unitario') or 0, item.get('valor_total') or 0))
+        cfg = db.execute('SELECT nf_numero_inicial FROM fiscal_config WHERE id=1').fetchone()
+        atual = int(only_digits(cfg['nf_numero_inicial'] if cfg else '1') or 1)
+        numero_rec = int(only_digits(data.get('nf_devolucao_numero')) or 0)
+        if numero_rec and atual <= numero_rec:
+            db.execute('UPDATE fiscal_config SET nf_numero_inicial=? WHERE id=1', (str(numero_rec + 1),))
+        db.commit()
+    return devolucao_id
+
+
+def _find_sibling_danfe(xml_path):
+    folder = os.path.dirname(xml_path)
+    if not os.path.isdir(folder):
+        return ''
+    candidates = [os.path.join(folder, n) for n in os.listdir(folder) if n.lower().endswith('.pdf') and 'danfe' in n.lower()]
+    return sorted(candidates)[-1] if candidates else ''
+
+
+def recover_authorized_returns_from_files():
+    try:
+        for root_dir, _, names in os.walk(FISCAL_NFE_DIR):
+            for name in names:
+                if not name.lower().endswith('-autorizado.xml'):
+                    continue
+                xml_path = os.path.join(root_dir, name)
+                data = _parse_authorized_return_xml(xml_path)
+                if not data:
+                    continue
+                guess = xml_path[:-len('-autorizado.xml')] + '-assinado.xml'
+                signed = guess if os.path.isfile(guess) else ''
+                _insert_recovered_return(data, xml_path, _find_sibling_danfe(xml_path), signed)
+    except Exception:
+        pass
+
+
+def recover_bundled_authorized_returns():
+    recovery_dir = os.path.join(app.root_path, 'recovery')
+    if not os.path.isdir(recovery_dir):
+        return
+    for name in os.listdir(recovery_dir):
+        if not name.endswith('.json'):
+            continue
+        try:
+            with open(os.path.join(recovery_dir, name), 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            chave = only_digits(data.get('chave'))
+            existing = fetch_one('SELECT * FROM devolucoes WHERE nf_devolucao_chave=? LIMIT 1', (chave,))
+            bundle_pdf = os.path.join(app.root_path, data.get('danfe_bundle') or '')
+            if existing:
+                current_danfe = fiscal_safe_file(cfg_val(existing, 'danfe_path'))
+                if bundle_pdf and os.path.isfile(bundle_pdf) and not current_danfe:
+                    folder = os.path.join(FISCAL_NFE_DIR, str(existing['id']))
+                    os.makedirs(folder, exist_ok=True)
+                    dest = os.path.join(folder, f"NFe-{int(data.get('serie') or 1)}-{int(data.get('nf_devolucao_numero') or 1)}-DANFE.pdf")
+                    if not os.path.isfile(dest):
+                        shutil.copy2(bundle_pdf, dest)
+                    exec_sql('UPDATE devolucoes SET danfe_path=? WHERE id=?', (dest, existing['id']))
+                refreshed = fetch_one('SELECT * FROM devolucoes WHERE id=?', (existing['id'],))
+                _insert_recovered_return(data, cfg_val(refreshed, 'xml_autorizado_path') or '', cfg_val(refreshed, 'danfe_path') or '', cfg_val(refreshed, 'xml_assinado_path') or '')
+                continue
+            devolucao_id = _insert_recovered_return(data)
+            if devolucao_id and bundle_pdf and os.path.isfile(bundle_pdf):
+                folder = os.path.join(FISCAL_NFE_DIR, str(devolucao_id))
+                os.makedirs(folder, exist_ok=True)
+                dest = os.path.join(folder, f"NFe-{int(data.get('serie') or 1)}-{int(data.get('nf_devolucao_numero') or 1)}-DANFE.pdf")
+                shutil.copy2(bundle_pdf, dest)
+                exec_sql('UPDATE devolucoes SET danfe_path=? WHERE id=?', (dest, devolucao_id))
+        except Exception:
+            continue
+
+
+def recover_devolucao_files():
+    """Reconecta arquivos fiscais e recria NF-es autorizadas que sumiram do histórico."""
     try:
         rows = fetch_all("SELECT id, xml_assinado_path, xml_autorizado_path, danfe_path FROM devolucoes ORDER BY id")
         for row in rows:
@@ -866,8 +1072,9 @@ def recover_devolucao_files():
                     danfe_path=COALESCE(NULLIF(?,''), danfe_path)
                     WHERE id=?""", (signed, authorized, danfe, row["id"]))
     except Exception:
-        # Nunca impede o sistema de subir por causa de uma recuperação opcional.
         pass
+    recover_authorized_returns_from_files()
+    recover_bundled_authorized_returns()
 
 
 recover_devolucao_files()
@@ -1634,6 +1841,7 @@ def find_product_for_xml_item(db, item):
 @app.route("/devolucoes")
 @login_required
 def devolucoes():
+    recover_devolucao_files()
     q = (request.args.get("q") or "").strip()
     if q:
         like = f"%{q}%"

@@ -99,3 +99,6 @@ A montagem do XML usa `Make::getXML()`. A chamada antiga `Make::monta()` foi rem
 - XML usado diretamente em uma devolução passa a entrar também no histórico de XMLs.
 - Novo cupom térmico dedicado (80 mm), sem layout/base da PWA e sem altura mínima de viewport, evitando grande área branca no fim.
 - Cache do PWA incrementado para aplicar o CSS novo após redeploy.
+
+## Recuperação automática de NF-e autorizada
+Esta versão varre `/app/data/fiscal/nfe` e recria no banco devoluções autorizadas que ainda tenham XML autorizado no volume. Também contém uma recuperação específica da NF-e nº 1/série 1 fornecida pelo usuário, usando o DANFE oficial apenas para repor o histórico e a impressão caso o XML tenha se perdido. Nenhuma nota é reenviada à SEFAZ e nenhum estoque é baixado novamente durante a recuperação.

@@ -1,0 +1,140 @@
+RECEBEMOS DE CENTRALVET AGROPECUARIA LTDA OS PRODUTOS E/OU SERVIÇOS CONSTANTES DA NOTA FISCAL ELETRÔNICA INDICADA
+ABAIXO. EMISSÃO: 24/09/2026 VALOR TOTAL: R$ 11.464,10 DESTINATÁRIO: J.A. AGRONEGOCIOS COM. E DISTR. DE PROD. - RUA TOMAZ PEDRO
+                                                                                                                                                                                   NF-e
+DO COUTO, 630 POLO INDUSTRIAL FRANCA-SP
+DATA DE RECEBIMENTO                  IDENTIFICAÇÃO E ASSINATURA DO RECEBEDOR
+                                                                                                                                                                           Nº. 000.000.001
+                                                                                                                                                                              Série 001
+
+                            IDENTIFICAÇÃO DO EMITENTE
+                                                                                         DANFE
+                                                                                Documento Auxiliar da Nota
+                                                                                    Fiscal Eletrônica
+  CENTRALVET AGROPECUARIA LTDA                                                   0 - ENTRADA
+              R MANOEL FRANCISCO DE CASTRO, 21 - B                               1 - SAÍDA                 1      CHAVE DE ACESSO
+                       CENTRO - 36828-000                                                                                 3126 0968 6902 2500 0150 5500 1000 0000 0118 2662 8729
+                 ORIZANIA - MG Fone/Fax: 3138751342                                 Nº. 000.000.001                          Consulta de autenticidade no portal nacional da NF-e
+                                                                                       Série 001
+                                                                                           Folha 1/2                     www.nfe.fazenda.gov.br/portal ou no site da Sefaz Autorizadora
+NATUREZA DA OPERAÇÃO                                                                                              PROTOCOLO DE AUTORIZAÇÃO DE USO
+
+                                      DEVOLUCAO DE COMPRA                                                                      131267937819077 - 24/09/2026 09:18:25
+INSCRIÇÃO ESTADUAL                                 INSCRIÇÃO MUNICIPAL                               INSCRIÇÃO ESTADUAL DO SUBST. TRIBUT.               CNPJ / CPF
+
+               0056260880049                                                                                                                                      68.690.225/0001-50
+DESTINATÁRIO / REMETENTE
+NOME / RAZÃO SOCIAL                                                                                                      CNPJ / CPF                                       DATA DA EMISSÃO
+
+J.A. AGRONEGOCIOS COM. E DISTR. DE PROD.                                                                                           29.997.296/0001-49                              24/09/2026
+ENDEREÇO                                                                                     BAIRRO / DISTRITO                          CEP                               DATA DA SAÍDA/ENTRADA
+
+RUA TOMAZ PEDRO DO COUTO, 630                                                                     POLO INDUSTRIAL                                14406-065
+MUNICÍPIO                                                                                    UF      FONE / FAX                        INSCRIÇÃO ESTADUAL                 HORA DA SAÍDA/ENTRADA
+
+FRANCA                                                                                        SP            1631459920                        310691861110
+CÁLCULO DO IMPOSTO
+BASE DE CÁLC. DO ICMS VALOR DO ICMS                BASE DE CÁLC. ICMS S.T. VALOR DO ICMS SUBST. V. IMP. IMPORTAÇÃO           V. ICMS UF REMET.         V. FCP UF DEST.             V. TOTAL PRODUTOS
+
+             4.585,64                    550,28                    0,00                     0,00                      0,00                      0,00                      0,00              11.464,10
+VALOR DO FRETE             VALOR DO SEGURO         DESCONTO               OUTRAS DESPESAS           VALOR TOTAL IPI          V. ICMS UF DEST.          V. TOT. TRIB.               V. TOTAL DA NOTA
+
+                   0,00                     0,00                   0,00                     0,00                      0,00                      0,00                      0,00              11.464,10
+TRANSPORTADOR / VOLUMES TRANSPORTADOS
+NOME / RAZÃO SOCIAL                                       FRETE                         CÓDIGO ANTT                   PLACA DO VEÍCULO             UF       CNPJ / CPF
+                                                           9-Sem Transporte
+ENDEREÇO                                                                                MUNICÍPIO                                                  UF        INSCRIÇÃO ESTADUAL
+
+
+QUANTIDADE            ESPÉCIE                         MARCA                             NUMERAÇÃO                        PESO BRUTO                                  PESO LÍQUIDO
+
+
+DADOS DOS PRODUTOS / SERVIÇOS
+                                                                                                                        VALOR         VALOR     VALOR      B.CÁLC        VALOR      VALOR   ALÍQ. ALÍQ.
+CÓDIGO PRODUTO              DESCRIÇÃO DO PRODUTO / SERVIÇO           NCM/SH    O/CSOSN CFOP         UN    QUANT          UNIT         TOTAL      DESC       ICMS          ICMS        IPI   ICMS   IPI
+    50200041        CATOFOS B12 100 mL                              30045090    0/900     6202    UN          3,0000     87,4200       262,26     0,00       104,90        12,59            12,00
+    50200042        CATOFOS B12 250 mL                              30045090    0/900     6202    UN          2,0000    184,8200       369,64     0,00       147,86        17,74            12,00
+    50200023        TURBOCALCIO 500 ML                              30049023    0/900     6202    UN          5,0000     45,3300       226,65     0,00        90,66        10,88            12,00
+    50200095        CALFOMAG 500 mL                                 30049059    0/900     6202    UN          5,0000     25,9400       129,70     0,00        51,88         6,23            12,00
+    50200092        GLICOTON-B12 1000 mL                            30049099    0/900     6202    UN          5,0000     51,9900       259,95     0,00       103,98        12,48            12,00
+    51100000        VITAGOLD POTENCIADO 1 L                         30045090    5/900     6202    UN          5,0000    111,4600       557,30     0,00       222,92        26,75            12,00
+    50200103        HIDRALAC 500 mL                                 30049099    0/900     6202    UN          3,0000     74,9900       224,97     0,00        89,99        10,80            12,00
+    50200335        PROBACTER BOV 34G                               23099090    0/900     6202    UN         15,0000     28,1700       422,55     0,00       169,02        20,28            12,00
+    56500002        DRENCH JA SUPLEMENTO MINERAL 1kg                23099010    0/900     6202    UN          3,0000     59,7300       179,19     0,00        71,68         8,60            12,00
+    51100030        FERRODEX B12 50 mL                              30049096    5/900     6202    UN          5,0000     19,6300        98,15     0,00        39,26         4,71            12,00
+    50200127        ATIVE A.D.E.50mL                                30045040    0/900     6202    UN          3,0000     32,1300        96,39     0,00        38,56         4,63            12,00
+    50200129        ATIVE A.D.E.250mL                               30045040    0/900     6202    UN          2,0000    147,1700       294,34     0,00       117,74        14,13            12,00
+    50200085        TURBOVIT-B12 20 mL                              30045030    0/900     6202    UN         10,0000     22,5600       225,60     0,00        90,24        10,83            12,00
+    50200044        FLUMAX 50 mL                                    30049099    0/900     6202    UN          3,0000     47,5600       142,68     0,00        57,07         6,85            12,00
+    50200056        FLUMAX 100 mL                                   30049099    0/900     6202    UN          2,0000     79,9600       159,92     0,00        63,97         7,68            12,00
+    50200113        PRADOR 50 mL                                    30049069    0/900     6202    UN          2,0000     61,6100       123,22     0,00        49,29         5,91            12,00
+    50200114        PRADOR 100 mL                                   30049069    0/900     6202    UN          3,0000    100,7200       302,16     0,00       120,86        14,50            12,00
+    50200334        VETPROFEN 50 ML                                 30049029    0/900     6202    UN          2,0000     38,3200        76,64     0,00        30,66         3,68            12,00
+    50200333        VETPROFEN 100 ML                                30049029    0/900     6202    UN          3,0000     65,6800       197,04     0,00        78,82         9,46            12,00
+    50200300        DEXA-JA 50 ML                                   30043210    0/900     6202    UN          2,0000     28,0000        56,00     0,00        22,40         2,69            12,00
+    50200301        DEXA-JA 100 ML                                  30043210    0/900     6202    UN          3,0000     46,6700       140,01     0,00        56,00         6,72            12,00
+    50200006        DICLOFENACO JA 50mL                             30049037    0/900     6202    UN          5,0000     15,3400        76,70     0,00        30,68         3,68            12,00
+    50200371        FIROMAX 50 ML                                   30049099    0/900     6202    UN          5,0000    117,1600       585,80     0,00       234,32        28,12            12,00
+    50100003        DICLOPEN 10 MILHOES                             30041015    0/900     6202    UN          3,0000     30,7500        92,25     0,00        36,90         4,43            12,00
+    50100014        GENTOPEN 20 MILHOES                             30041014    0/900     6202    UN          6,0000     50,4100       302,46     0,00       120,98        14,52            12,00
+    50100025        VETIPEN LA 50 mL                                30041015    0/900     6202    UN          5,0000     36,3300       181,65     0,00        72,66         8,72            12,00
+    50100009        BENZAFORT 12 MILHOES 50mL                       30041013    0/900     6202    UN          5,0000     49,3200       246,60     0,00        98,64        11,84            12,00
+    50100005        PRO-BEZERRO 50mL                                30041013    0/900     6202    UN          5,0000     67,9700       339,85     0,00       135,94        16,31            12,00
+    50100026        AMOX LA 100 mL                                  30041012    0/900     6202    UN          5,0000     45,2700       226,35     0,00        90,54        10,86            12,00
+    50200053        CETOFUR 100 mL                                  30042059    0/900     6202    UN          5,0000    133,6900       668,45     0,00       267,37        32,09            12,00
+    50200009        VETSULFA 100mL                                  30049072    0/900     6202    UN          3,0000     46,0800       138,24     0,00        55,30         6,64            12,00
+    50200008        VETSULFA 50mL                                   30049072    0/900     6202    UN          2,0000     30,6800        61,36     0,00        24,54         2,94            12,00
+    50200011        DICLOTRIL 50mL                                  30049067    0/900     6202    UN          3,0000     37,6600       112,98     0,00        45,19         5,42            12,00
+    50200120        ENRO 10 100 mL                                  30049067    0/900     6202    UN          5,0000     43,0300       215,15     0,00        86,06        10,33            12,00
+    50200101        TETRA-MICINA 50 mL                              30042099    0/900     6202    UN          5,0000     14,9600        74,80     0,00        29,92         3,59            12,00
+    50200081        CURSOTRIL 50 mL                                 30042099    0/900     6202    UN          5,0000     45,1500       225,75     0,00        90,30        10,84            12,00
+    50200026        GANAVET PLUS 50mL                               30049099    0/900     6202    UN          5,0000     43,3200       216,60     0,00        86,64        10,40            12,00
+    50200285        IMIDOVET 50mL                                   30049069    0/900     6202    UN          5,0000     84,6700       423,35     0,00       169,34        20,32            12,00
+    50100016        MASTITE CLINICA                                 30041012    0/900     6202    UN         24,0000     16,4100       393,84     0,00       157,54        18,90            12,00
+
+
+
+
+DADOS ADICIONAIS
+INFORMAÇÕES COMPLEMENTARES                                                                                                         RESERVADO AO FISCO
+Inf. Contribuinte: NF-e de devolução referente à NF-e 35260929997296000149550010002006171126965767.
+Motivo: Devolução por avaria
+Impresso em 24/09/2026 as 09:18:25                                                                                                                                                    Powered by NFePHP®
+                            IDENTIFICAÇÃO DO EMITENTE
+                                                                                    DANFE
+                                                                            Documento Auxiliar da Nota
+                                                                                Fiscal Eletrônica
+  CENTRALVET AGROPECUARIA LTDA                                               0 - ENTRADA
+              R MANOEL FRANCISCO DE CASTRO, 21 - B                           1 - SAÍDA            1      CHAVE DE ACESSO
+                       CENTRO - 36828-000                                                                       3126 0968 6902 2500 0150 5500 1000 0000 0118 2662 8729
+                 ORIZANIA - MG Fone/Fax: 3138751342                             Nº. 000.000.001                    Consulta de autenticidade no portal nacional da NF-e
+                                                                                   Série 001
+                                                                                     Folha 2/2                 www.nfe.fazenda.gov.br/portal ou no site da Sefaz Autorizadora
+NATUREZA DA OPERAÇÃO                                                                                     PROTOCOLO DE AUTORIZAÇÃO DE USO
+
+                                     DEVOLUCAO DE COMPRA                                                           131267937819077 - 24/09/2026 09:18:25
+INSCRIÇÃO ESTADUAL                               INSCRIÇÃO MUNICIPAL                        INSCRIÇÃO ESTADUAL DO SUBST. TRIBUT.            CNPJ / CPF
+
+               0056260880049                                                                                                                         68.690.225/0001-50
+DADOS DOS PRODUTOS / SERVIÇOS
+                                                                                                              VALOR      VALOR      VALOR     B.CÁLC      VALOR     VALOR   ALÍQ. ALÍQ.
+CÓDIGO PRODUTO              DESCRIÇÃO DO PRODUTO / SERVIÇO       NCM/SH    O/CSOSN CFOP    UN    QUANT         UNIT      TOTAL       DESC      ICMS        ICMS       IPI   ICMS   IPI
+    50100027        VETIMAX 8 g                                 30041011    0/900   6202   UN       20,0000    10,6300     212,60     0,00        85,04     10,20           12,00
+    50100010        INTRASEC                                    30041019    0/900   6202   UN       24,0000    10,4700     251,28     0,00       100,51     12,06           12,00
+    51300050        IVEREQUI PASTA 6g                           30049059    5/900   6202   UN        5,0000    13,7600      68,80     0,00        27,52      3,30           12,00
+    50200097        EQUIJET                                     30049099    0/900   6202   UN        5,0000    18,7300      93,65     0,00        37,46      4,50           12,00
+    51300000        PROVERME 28 g                               30049067    5/900   6202   UN       25,0000     6,1900     154,75     0,00        61,90      7,43           12,00
+    50200137        INSEMAX POUR ON 1L                          38089192    0/900   6202   UN        5,0000    49,2500     246,25     0,00        98,50     11,82           12,00
+    51300010        TRIFON 50 1L                                38089196    5/900   6202   UN        2,0000   128,3900     256,78     0,00       102,71     12,33           12,00
+    50200106        TANICURA 200 g                              38089192    0/900   6202   UN        3,0000    26,1100      78,33     0,00        31,33      3,76           12,00
+    50200037        LONGAMECTINA PREM. 3,5 % 50 mL              30049059    0/900   6202   UN        3,0000    31,1400      93,42     0,00        37,37      4,48           12,00
+    50200028        EGG PPU 500 mL                              30049099    0/900   6202   UN        3,0000    87,1500     261,45     0,00       104,58     12,55           12,00
+    50200331        LIDOCOL 100 ML                              30049043    0/900   6202   UN        5,0000    27,4700     137,35     0,00        54,94      6,59           12,00
+    50200346        DETOXAN 100 mL                              30049059    0/900   6202   UN        5,0000    28,6000     143,00     0,00        57,20      6,86           12,00
+    50200337        HEMOSTHAL INJETAVEL 100 ML                  30049099    0/900   6202   UN        4,0000    53,2900     213,16     0,00        85,26     10,23           12,00
+    50200098        DICLOTRIL 100mL                             30049067    0/900   6202   UN        2,0000    63,3700     126,74     0,00        50,70      6,08           12,00
+
+
+
+
+Impresso em 24/09/2026 as 09:18:25                                                                                                                                    Powered by NFePHP®
+
