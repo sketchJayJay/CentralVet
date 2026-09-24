@@ -1,9 +1,8 @@
-
 {% extends "base.html" %}
 {% block content %}
 <section class="hero">
   <span class="badge">Produtos</span><h1>Produtos e estoque</h1>
-  <p>Cadastro com preço, NCM, CFOP, CST/CSOSN e estoque mínimo.</p>
+  <p>Cadastro com preço, unidade de medida, NCM, CFOP, CST/CSOSN e estoque mínimo.</p>
   <div class="actions"><a class="btn green" href="{{ url_for('importar_xml') }}">Importar produtos pelo XML</a><a class="btn secondary" href="{{ url_for('estoque') }}">Movimentar estoque</a></div>
 </section>
 <div class="card">
@@ -13,11 +12,33 @@
       <div><label>Código</label><input name="codigo"></div>
       <div><label>Nome do produto</label><input name="nome" required></div>
       <div><label>Categoria</label><input name="categoria"></div>
-      <div><label>Unidade</label><input name="unidade" value="UN"></div>
+      <div>
+        <label>Unidade de medida</label>
+        <select name="unidade" required>
+          <option value="UN" selected>UN - Unidade</option>
+          <option value="CX">CX - Caixa</option>
+          <option value="PCT">PCT - Pacote</option>
+          <option value="FD">FD - Fardo</option>
+          <option value="SC">SC - Saco</option>
+          <option value="KG">KG - Quilograma</option>
+          <option value="G">G - Grama</option>
+          <option value="L">L - Litro</option>
+          <option value="ML">ML - Mililitro</option>
+          <option value="FR">FR - Frasco</option>
+          <option value="AMP">AMP - Ampola</option>
+          <option value="GL">GL - Galão</option>
+          <option value="M">M - Metro</option>
+          <option value="M2">M² - Metro quadrado</option>
+          <option value="M3">M³ - Metro cúbico</option>
+          <option value="PAR">PAR - Par</option>
+          <option value="KIT">KIT</option>
+        </select>
+        <small>Escolha a unidade. A quantidade fica no campo Estoque inicial.</small>
+      </div>
       <div><label>Preço custo</label><input name="preco_custo" placeholder="0,00"></div>
       <div><label>Preço venda</label><input name="preco_venda" placeholder="0,00"></div>
-      <div><label>Estoque inicial</label><input name="estoque" placeholder="0"></div>
-      <div><label>Estoque mínimo</label><input name="estoque_minimo" placeholder="0"></div>
+      <div><label>Estoque inicial</label><input name="estoque" inputmode="decimal" placeholder="Ex.: 10"></div>
+      <div><label>Estoque mínimo</label><input name="estoque_minimo" inputmode="decimal" placeholder="Ex.: 2"></div>
       <div><label>Cód. barras/EAN</label><input name="ean"></div>
       <div><label>NCM</label><input name="ncm"></div>
       <div><label>CEST</label><input name="cest"></div>
@@ -37,7 +58,7 @@
   {% for p in rows %}
   <tr>
     <td>{{ p.codigo }}</td><td><b>{{ p.nome }}</b><br><small>{{ p.categoria }}</small></td>
-    <td><span class="pill {{ 'red' if p.estoque <= p.estoque_minimo else 'green' }}">{{ p.estoque|num }} {{ p.unidade }}</span></td>
+    <td><span class="pill {{ 'red' if p.estoque <= p.estoque_minimo else 'green' }}"><b>{{ p.estoque|num }}</b>&nbsp;{{ p.unidade or 'UN' }}</span></td>
     <td>{{ p.preco_custo|money }}</td><td><b>{{ p.preco_venda|money }}</b></td>
     <td><small>EAN {{ p.ean or '-' }}<br>NCM {{ p.ncm or '-' }} • CEST {{ p.cest or '-' }}<br>CFOP {{ p.cfop or '-' }} • {{ p.cst_csosn or '-' }}</small></td>
     <td style="white-space:nowrap"><a class="btn secondary" href="{{ url_for('editar_produto', item_id=p.id) }}">Editar</a>

@@ -1,18 +1,29 @@
-
 {% extends "base.html" %}
 {% block content %}
-<section class="hero"><span class="badge">Produto</span><h1>Editar produto</h1><p>Altere cadastro, preço, estoque e campos fiscais.</p></section>
+<section class="hero"><span class="badge">Produto</span><h1>Editar produto</h1><p>Altere cadastro, unidade, preço, estoque e campos fiscais.</p></section>
 <div class="card">
 <form method="post">
   <div class="row">
     <div><label>Código</label><input name="codigo" value="{{ row.codigo }}"></div>
     <div><label>Nome do produto</label><input name="nome" value="{{ row.nome }}" required></div>
     <div><label>Categoria</label><input name="categoria" value="{{ row.categoria }}"></div>
-    <div><label>Unidade</label><input name="unidade" value="{{ row.unidade }}"></div>
+    <div>
+      <label>Unidade de medida</label>
+      {% set u = (row.unidade or 'UN')|upper %}
+      <select name="unidade" required>
+        {% for cod, nome in [('UN','Unidade'),('CX','Caixa'),('PCT','Pacote'),('FD','Fardo'),('SC','Saco'),('KG','Quilograma'),('G','Grama'),('L','Litro'),('ML','Mililitro'),('FR','Frasco'),('AMP','Ampola'),('GL','Galão'),('M','Metro'),('M2','Metro quadrado'),('M3','Metro cúbico'),('PAR','Par'),('KIT','Kit')] %}
+          <option value="{{ cod }}" {{ 'selected' if u == cod else '' }}>{{ cod }} - {{ nome }}</option>
+        {% endfor %}
+        {% if u not in ['UN','CX','PCT','FD','SC','KG','G','L','ML','FR','AMP','GL','M','M2','M3','PAR','KIT'] %}
+          <option value="{{ u }}" selected>{{ u }} - Unidade importada</option>
+        {% endif %}
+      </select>
+      <small>Quantidade/estoque é preenchida separadamente abaixo.</small>
+    </div>
     <div><label>Preço custo</label><input name="preco_custo" value="{{ row.preco_custo }}"></div>
     <div><label>Preço venda</label><input name="preco_venda" value="{{ row.preco_venda }}"></div>
-    <div><label>Estoque</label><input name="estoque" value="{{ row.estoque }}"></div>
-    <div><label>Estoque mínimo</label><input name="estoque_minimo" value="{{ row.estoque_minimo }}"></div>
+    <div><label>Estoque</label><input name="estoque" inputmode="decimal" value="{{ row.estoque }}"></div>
+    <div><label>Estoque mínimo</label><input name="estoque_minimo" inputmode="decimal" value="{{ row.estoque_minimo }}"></div>
     <div><label>Cód. barras/EAN</label><input name="ean" value="{{ row.ean or '' }}"></div>
     <div><label>NCM</label><input name="ncm" value="{{ row.ncm or '' }}"></div>
     <div><label>CEST</label><input name="cest" value="{{ row.cest or '' }}"></div>

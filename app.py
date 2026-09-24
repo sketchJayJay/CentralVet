@@ -107,6 +107,31 @@ def money_to_float(v):
 def num_to_float(v):
     return money_to_float(v)
 
+UNIDADES_PADRAO = [
+    "UN", "CX", "PCT", "FD", "SC", "KG", "G", "L", "ML",
+    "FR", "AMP", "GL", "M", "M2", "M3", "PAR", "KIT"
+]
+
+def normalizar_unidade(v):
+    """Evita confundir quantidade com unidade de medida.
+
+    Valores numéricos (ex.: '1') são inválidos como unidade e viram UN.
+    Unidades alfabéticas vindas de XML são preservadas em maiúsculas.
+    """
+    s = str(v or "").strip().upper()
+    if not s:
+        return "UN"
+    # Se o usuário digitou quantidade no campo unidade (1, 1.0, 0,001 etc.), corrige para UN.
+    try:
+        float(s.replace(",", "."))
+        return "UN"
+    except Exception:
+        pass
+    # Evita lixo/valores muito longos no campo. Mantém unidades usuais ou abreviações de XML.
+    if len(s) > 10:
+        return "UN"
+    return s
+
 def today_str():
     return date.today().isoformat()
 
@@ -755,6 +780,12 @@ def init_db():
             ('ean', 'TEXT'), ('cest', 'TEXT'), ('ultima_chave_xml', 'TEXT'), ('fornecedor_id', 'INTEGER')
         ]:
             add_column(db, 'produtos', column, ddl)
+        # Corrige cadastros antigos em que a quantidade foi digitada por engano no campo Unidade
+        # (ex.: estoque 0,00 + unidade '1' aparecia visualmente como '0,001').
+        for prod in db.execute("SELECT id, unidade FROM produtos").fetchall():
+            unidade_corrigida = normalizar_unidade(prod["unidade"])
+            if unidade_corrigida != (prod["unidade"] or ""):
+                db.execute("UPDATE produtos SET unidade=? WHERE id=?", (unidade_corrigida, prod["id"]))
         # Migrações de compatibilidade com bancos de versões antigas.
         # CREATE TABLE IF NOT EXISTS não adiciona colunas novas em uma tabela já existente,
         # então cada coluna usada por vendas/relatórios precisa ser garantida explicitamente.
@@ -1243,7 +1274,7 @@ def produtos():
                 request.form.get("codigo","").strip(),
                 request.form.get("nome","").strip(),
                 request.form.get("categoria","").strip(),
-                request.form.get("unidade","UN").strip() or "UN",
+                normalizar_unidade(request.form.get("unidade", "UN")),
                 money_to_float(request.form.get("preco_custo")),
                 money_to_float(request.form.get("preco_venda")),
                 num_to_float(request.form.get("estoque")),
@@ -1281,7 +1312,7 @@ def editar_produto(item_id):
             request.form.get("codigo","").strip(),
             request.form.get("nome","").strip(),
             request.form.get("categoria","").strip(),
-            request.form.get("unidade","UN").strip() or "UN",
+            normalizar_unidade(request.form.get("unidade", "UN")),
             money_to_float(request.form.get("preco_custo")),
             money_to_float(request.form.get("preco_venda")),
             num_to_float(request.form.get("estoque")),
@@ -1796,7 +1827,7 @@ def importar_xml():
                         UPDATE produtos SET nome=?, unidade=?, preco_custo=?, preco_venda=?, estoque=estoque+?,
                         ncm=?, cfop=?, cst_csosn=?, ean=?, cest=?, ultima_chave_xml=?, fornecedor_id=?
                         WHERE id=?
-                    """, (item["nome"], item["unidade"], custo, novo_preco_venda, qtd, item["ncm"], item["cfop"],
+                    """, (item["nome"], normalizar_unidade(item["unidade"]), custo, novo_preco_venda, qtd, item["ncm"], item["cfop"],
                           item["cst_csosn"], item["ean"], item["cest"], chave_unica, fornecedor_id, produto_id))
                     atualizados += 1
                 else:
@@ -1804,7 +1835,7 @@ def importar_xml():
                     cur = db.execute("""
                         INSERT INTO produtos (codigo,nome,categoria,unidade,preco_custo,preco_venda,estoque,estoque_minimo,ncm,cfop,cst_csosn,ean,cest,ultima_chave_xml,fornecedor_id)
                         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-                    """, (item["codigo"], item["nome"], "Importado XML", item["unidade"] or "UN", custo, preco_venda, qtd, 0,
+                    """, (item["codigo"], item["nome"], "Importado XML", normalizar_unidade(item["unidade"]), custo, preco_venda, qtd, 0,
                           item["ncm"], item["cfop"], item["cst_csosn"], item["ean"], item["cest"], chave_unica, fornecedor_id))
                     produto_id = cur.lastrowid
                     novos += 1
