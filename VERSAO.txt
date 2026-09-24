@@ -1,9 +1,1 @@
-CENTRALVET - recuperação de NF-e autorizada + histórico persistente
-Data: 24/09/2026
-
-- Recria automaticamente devoluções autorizadas a partir dos XMLs existentes em /app/data/fiscal/nfe.
-- Restaura a NF-e de devolução nº 1, série 1, chave 31260968690225000150550010000000011826628729, sem reenviar à SEFAZ.
-- Inclui o DANFE oficial fornecido pelo usuário para reaparecer no histórico mesmo se o registro do banco tiver sumido.
-- Recupera 53 itens da NF-e nº 1 no detalhe da devolução.
-- Mantém o próximo número da NF-e acima da maior nota recuperada.
-- Não movimenta estoque novamente ao restaurar histórico.
+Persistência reforçada contra redeploy.

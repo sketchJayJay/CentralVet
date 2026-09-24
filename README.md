@@ -102,3 +102,17 @@ A montagem do XML usa `Make::getXML()`. A chamada antiga `Make::monta()` foi rem
 
 ## Recuperação automática de NF-e autorizada
 Esta versão varre `/app/data/fiscal/nfe` e recria no banco devoluções autorizadas que ainda tenham XML autorizado no volume. Também contém uma recuperação específica da NF-e nº 1/série 1 fornecida pelo usuário, usando o DANFE oficial apenas para repor o histórico e a impressão caso o XML tenha se perdido. Nenhuma nota é reenviada à SEFAZ e nenhum estoque é baixado novamente durante a recuperação.
+
+## Persistência reforçada contra redeploy
+Esta versão usa `/app/data/centralvet.db` como banco principal e mantém automaticamente uma segunda cópia consistente em `/app/certs/centralvet-persistence/centralvet.db`.
+
+No Coolify, mantenha DOIS volumes persistentes fixos:
+
+```text
+centralvet-agropecuaria-data  -> /app/data
+centralvet-agropecuaria-certs -> /app/certs
+```
+
+Se `/app/data` nascer vazio após um redeploy, o sistema restaura automaticamente o banco espelho de `/app/certs` antes de inicializar as tabelas. Cadastros de produtos, clientes, fornecedores, vendas, financeiro e devoluções deixam de depender do filesystem efêmero do container.
+
+Não renomeie nem recrie esses volumes entre redeploys. Um redeploy normal deve reutilizar exatamente os mesmos volumes.

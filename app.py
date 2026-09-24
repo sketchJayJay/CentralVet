@@ -25,6 +25,15 @@ os.makedirs(BACKUP_DIR, exist_ok=True)
 os.makedirs(FISCAL_ORIGINAL_DIR, exist_ok=True)
 os.makedirs(FISCAL_NFE_DIR, exist_ok=True)
 
+# Segunda cópia de segurança em /app/certs.
+# No Coolify, /app/certs já precisa ser persistente para manter o A1; por isso
+# usamos esse volume como paraquedas caso /app/data seja recriado por engano.
+CERT_PATH_ENV = os.environ.get("CERTIFICADO_PATH", "/app/certs/centralvet_a1.pfx")
+CERTS_DIR = os.path.dirname(CERT_PATH_ENV) or "/app/certs"
+PERSIST_MIRROR_DIR = os.environ.get("PERSIST_MIRROR_DIR", os.path.join(CERTS_DIR, "centralvet-persistence"))
+MIRROR_DB_PATH = os.path.join(PERSIST_MIRROR_DIR, "centralvet.db")
+os.makedirs(PERSIST_MIRROR_DIR, exist_ok=True)
+
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 8 * 1024 * 1024
 app.secret_key = os.environ.get("SECRET_KEY", "centralvet-veltrix-2026")
@@ -192,13 +201,70 @@ def fetch_all(sql, params=()):
     with get_db() as db:
         return db.execute(sql, params).fetchall()
 
+def _sqlite_snapshot(source_path, dest_path):
+    """Cria uma cópia consistente do SQLite, inclusive se o app estiver em uso."""
+    os.makedirs(os.path.dirname(dest_path), exist_ok=True)
+    src = sqlite3.connect(source_path, timeout=30)
+    dst = sqlite3.connect(dest_path, timeout=30)
+    try:
+        src.backup(dst)
+        dst.commit()
+    finally:
+        dst.close()
+        src.close()
+
+def _db_business_score(path):
+    """Pontuação simples para distinguir um banco vazio de um banco com dados reais."""
+    if not os.path.exists(path) or os.path.getsize(path) < 1024:
+        return -1
+    try:
+        conn = sqlite3.connect(path)
+        score = 0
+        for table in ("produtos", "clientes", "fornecedores", "vendas", "financeiro", "devolucoes", "xml_imports"):
+            try:
+                score += int(conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0])
+            except Exception:
+                pass
+        conn.close()
+        return score
+    except Exception:
+        return -1
+
+def restore_db_from_persistent_mirror():
+    """Restaura o banco espelho quando /app/data nasceu vazio após um redeploy."""
+    if not os.path.exists(MIRROR_DB_PATH):
+        return False
+    primary_score = _db_business_score(DB_PATH)
+    mirror_score = _db_business_score(MIRROR_DB_PATH)
+    # Restaura quando o banco principal não existe/é inválido ou parece uma instalação nova
+    # e o espelho possui dados reais. Nunca substitui silenciosamente um banco com mais dados.
+    if primary_score < 0 or (primary_score == 0 and mirror_score > 0):
+        os.makedirs(DATA_DIR, exist_ok=True)
+        shutil.copy2(MIRROR_DB_PATH, DB_PATH)
+        print(f"[CENTRALVET] Banco restaurado do espelho persistente: {MIRROR_DB_PATH}", flush=True)
+        return True
+    return False
+
+def sync_persistent_mirror():
+    if not os.path.exists(DB_PATH):
+        return None
+    try:
+        _sqlite_snapshot(DB_PATH, MIRROR_DB_PATH)
+        return MIRROR_DB_PATH
+    except Exception as exc:
+        print(f"[CENTRALVET] Aviso: não foi possível atualizar espelho persistente: {exc}", flush=True)
+        return None
+
 def backup_db(reason="manual"):
     if not os.path.exists(DB_PATH):
         return None
     stamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     name = f"backup-centralvet-{reason}-{stamp}.db"
     dest = os.path.join(BACKUP_DIR, name)
-    shutil.copy2(DB_PATH, dest)
+    _sqlite_snapshot(DB_PATH, dest)
+    # Atualiza também o espelho no volume do certificado. Assim um redeploy não apaga cadastros
+    # mesmo se /app/data estiver configurado incorretamente no servidor.
+    sync_persistent_mirror()
     # keep latest 40 backups
     files = sorted([os.path.join(BACKUP_DIR, f) for f in os.listdir(BACKUP_DIR) if f.endswith(".db")])
     for old in files[:-40]:
@@ -867,7 +933,13 @@ def init_db():
         """, FISCAL_DEFAULTS)
         db.commit()
 
+# Antes de criar as tabelas, tenta recuperar a cópia espelho persistente.
+# Isso é propositalmente executado antes do init_db(), para um banco vazio do novo container
+# não esconder a cópia com os cadastros anteriores.
+restore_db_from_persistent_mirror()
 init_db()
+sync_persistent_mirror()
+print(f"[CENTRALVET] Banco ativo: {DB_PATH} | espelho: {MIRROR_DB_PATH}", flush=True)
 
 
 def _xml_local(node, name):
