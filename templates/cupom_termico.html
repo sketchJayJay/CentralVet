@@ -6,53 +6,175 @@
 <title>Cupom venda #{{ venda.id }}</title>
 <style>
   *{box-sizing:border-box}
-  html,body{margin:0!important;padding:0!important;background:#fff!important;color:#000;font-family:Arial,Helvetica,sans-serif;height:auto!important;min-height:0!important}
-  body{width:80mm;max-width:80mm;overflow:visible}
-  .ticket{width:72mm;margin:0 auto;padding:2mm 1mm 3mm;font-size:11px;line-height:1.25;height:auto;min-height:0}
-  .logo{text-align:center;margin:0 0 2mm}
-  .logo img{display:block;max-width:50mm;max-height:18mm;object-fit:contain;margin:0 auto 1mm}
-  h1{font-size:15px;margin:0;text-align:center}
+  html,body{
+    margin:0!important;
+    padding:0!important;
+    background:#fff!important;
+    color:#000!important;
+    font-family:Arial,Helvetica,sans-serif;
+    width:58mm;
+    max-width:58mm;
+    height:auto!important;
+    min-height:0!important;
+    overflow:visible!important;
+  }
+  body{display:block}
+  .ticket{
+    display:block;
+    width:48mm;
+    max-width:48mm;
+    margin:0 auto;
+    padding:2mm 0 2mm;
+    font-size:10px;
+    line-height:1.20;
+    height:auto!important;
+    min-height:0!important;
+    overflow:visible!important;
+  }
+  .logo{text-align:center;margin:0 0 1.5mm}
+  .logo img{display:block;max-width:38mm;max-height:14mm;object-fit:contain;margin:0 auto 1mm}
+  h1{font-size:13px;line-height:1.1;margin:0;text-align:center}
   .center{text-align:center}.right{text-align:right}.bold{font-weight:700}
-  .line{border-top:1px dashed #000;margin:2mm 0}
-  table{width:100%;border-collapse:collapse;font-size:10px}
-  th,td{padding:1mm .5mm;vertical-align:top;text-align:left;border:0}
-  th:last-child,td:last-child{text-align:right}
-  .total{font-size:15px;font-weight:800;text-align:right;margin-top:2mm}
-  .controls{width:72mm;margin:6px auto;display:flex;gap:6px}
-  button,a{border:0;padding:9px 10px;border-radius:7px;background:#0b6;color:#fff;font-weight:700;text-decoration:none;font-size:12px;cursor:pointer}
-  a{background:#444}
+  .line{border-top:.25mm dashed #000;margin:1.6mm 0}
+  table{width:100%;border-collapse:collapse;table-layout:fixed;font-size:9px}
+  th,td{padding:.7mm .3mm;vertical-align:top;text-align:left;border:0;white-space:normal;overflow-wrap:anywhere;word-break:break-word}
+  th:nth-child(1),td:nth-child(1){width:45%}
+  th:nth-child(2),td:nth-child(2){width:31%;text-align:center}
+  th:nth-child(3),td:nth-child(3){width:24%;text-align:right}
+  tr{break-inside:avoid;page-break-inside:avoid}
+  .total{font-size:13px;font-weight:800;text-align:right;margin-top:1.5mm}
+  .small{font-size:8px;line-height:1.15}
+  .controls{
+    width:min(96vw,420px);
+    margin:10px auto;
+    padding:8px;
+    display:flex;
+    gap:8px;
+    justify-content:center;
+    background:#f1f5f9;
+    border-radius:10px;
+  }
+  button,a{border:0;padding:10px 12px;border-radius:7px;background:#087f5b;color:#fff;font-weight:700;text-decoration:none;font-size:12px;cursor:pointer}
+  a{background:#475569}
+
+  /* O tamanho final da página é recalculado via JS antes da impressão. */
+  @page{size:58mm 100mm;margin:0}
+
   @media print{
-    @page{margin:0}
-    html,body{width:80mm!important;max-width:80mm!important;height:auto!important;min-height:0!important;margin:0!important;padding:0!important;overflow:visible!important}
-    .ticket{width:72mm!important;margin:0 auto!important;padding:2mm 1mm 2mm!important;height:auto!important;min-height:0!important;page-break-after:avoid!important;break-after:avoid-page!important}
+    html,body{
+      width:58mm!important;
+      max-width:58mm!important;
+      height:auto!important;
+      min-height:0!important;
+      margin:0!important;
+      padding:0!important;
+      overflow:visible!important;
+      background:#fff!important;
+    }
+    body{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}
+    .ticket{
+      width:48mm!important;
+      max-width:48mm!important;
+      margin:0 auto!important;
+      padding:1.5mm 0 1.5mm!important;
+      height:auto!important;
+      min-height:0!important;
+      overflow:visible!important;
+      break-after:avoid-page!important;
+      page-break-after:avoid!important;
+    }
     .controls{display:none!important}
   }
 </style>
 </head>
 <body>
-<div class="controls"><button onclick="window.print()">Imprimir</button><a href="{{ url_for('recibo_venda', venda_id=venda.id) }}">Voltar</a></div>
-<div class="ticket">
+<div class="controls">
+  <button type="button" onclick="printReceipt()">Imprimir POS-58</button>
+  <a href="{{ url_for('recibo_venda', venda_id=venda.id) }}">Voltar</a>
+</div>
+
+<div class="ticket" id="thermal-ticket">
   <div class="logo">
     <img src="{{ url_for('static', filename='centralvet_logo_original.jpg') }}" alt="CENTRALVET">
     <h1>CENTRALVET AGROPECUÁRIA</h1>
     <div>Venda #{{ venda.id }} • {{ venda.data|brdate }}</div>
   </div>
+
   <div class="line"></div>
   <div><span class="bold">Cliente:</span> {{ venda.cliente_nome or 'Consumidor' }}</div>
-  {% if venda.nf_status and venda.nf_status != 'Não emitida' %}<div><span class="bold">Fiscal:</span> {{ venda.nf_status }} {{ venda.nf_numero or '' }}</div>{% endif %}
+  {% if venda.nf_status and venda.nf_status != 'Não emitida' %}
+  <div><span class="bold">Fiscal:</span> {{ venda.nf_status }} {{ venda.nf_numero or '' }}</div>
+  {% endif %}
+
   <div class="line"></div>
   <table>
-    <thead><tr><th>Item</th><th>Qtd x Unit.</th><th>Total</th></tr></thead>
-    <tbody>{% for i in itens %}<tr><td>{{ i.produto_nome }}</td><td>{{ i.quantidade|num }} x {{ i.preco_unit|money }}</td><td>{{ i.total|money }}</td></tr>{% endfor %}</tbody>
+    <thead>
+      <tr><th>Item</th><th>Qtd x Unit.</th><th>Total</th></tr>
+    </thead>
+    <tbody>
+      {% for i in itens %}
+      <tr>
+        <td>{{ i.produto_nome }}</td>
+        <td>{{ i.quantidade|num }} x {{ i.preco_unit|money }}</td>
+        <td>{{ i.total|money }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
   </table>
+
   <div class="line"></div>
   <div class="total">TOTAL: {{ venda.total|money }}</div>
   <div><span class="bold">Pagamento:</span> {{ venda.forma_pagamento or '-' }} • {{ venda.status or '-' }}</div>
   {% if venda.observacao %}<div><span class="bold">Obs.:</span> {{ venda.observacao }}</div>{% endif %}
   <div class="line"></div>
   <div class="center">Obrigado pela preferência.</div>
-  {% if not venda.nf_status or venda.nf_status != 'Autorizada SEFAZ' %}<div class="center" style="font-size:9px;margin-top:2mm">Documento auxiliar/recibo. Sem valor fiscal quando não houver documento fiscal autorizado.</div>{% endif %}
+  {% if not venda.nf_status or venda.nf_status != 'Autorizada SEFAZ' %}
+  <div class="center small" style="margin-top:1.5mm">Documento auxiliar/recibo. Sem valor fiscal quando não houver documento fiscal autorizado.</div>
+  {% endif %}
 </div>
-{% if auto %}<script>window.addEventListener('load',()=>setTimeout(()=>window.print(),250));</script>{% endif %}
+
+<script>
+(function(){
+  const MM_PER_PX = 25.4 / 96;
+
+  function setExactPaperHeight(){
+    const ticket = document.getElementById('thermal-ticket');
+    if(!ticket) return;
+
+    // Mede o conteúdo real já renderizado e deixa só uma pequena folga para o corte.
+    const rect = ticket.getBoundingClientRect();
+    const contentPx = Math.max(rect.height, ticket.scrollHeight || 0);
+    let heightMm = (contentPx * MM_PER_PX) + 3;
+    heightMm = Math.max(35, Math.min(heightMm, 1000));
+
+    let style = document.getElementById('thermal-page-size');
+    if(!style){
+      style = document.createElement('style');
+      style.id = 'thermal-page-size';
+      document.head.appendChild(style);
+    }
+    style.textContent = '@media print { @page { size: 58mm ' + heightMm.toFixed(1) + 'mm; margin: 0; } }';
+  }
+
+  window.printReceipt = function(){
+    setExactPaperHeight();
+    requestAnimationFrame(function(){
+      setTimeout(function(){ window.print(); }, 80);
+    });
+  };
+
+  window.addEventListener('beforeprint', setExactPaperHeight);
+  window.addEventListener('resize', setExactPaperHeight);
+  window.addEventListener('load', function(){
+    const ready = (document.fonts && document.fonts.ready) ? document.fonts.ready : Promise.resolve();
+    ready.then(function(){
+      setTimeout(function(){
+        setExactPaperHeight();
+        {% if auto %}window.printReceipt();{% endif %}
+      }, 250);
+    });
+  });
+})();
+</script>
 </body>
 </html>

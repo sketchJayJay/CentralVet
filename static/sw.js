@@ -1,4 +1,4 @@
-const CACHE_NAME = 'centralvet-fiscal-limpo-v1-busca-produto-cliente';
+const CACHE_NAME = 'centralvet-pos58-impressao-exata-v1';
 const STATIC_ASSETS = [
   '/static/style.css',
   '/static/centralvet_logo.png',
