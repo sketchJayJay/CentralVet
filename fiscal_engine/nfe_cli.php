@@ -472,12 +472,13 @@ try {
         'infCpl' => 'NF-e de devolução referente à NF-e ' . $origKey . '. Motivo: ' . $motivo,
     ]);
 
-    $mk->monta();
+    // sped-nfe 5.2.x: getXML() monta/renderiza o documento automaticamente.
+    // O método antigo Make::monta() não existe nas versões atuais.
+    $xml = $mk->getXML();
     $makeErrors = $mk->getErrors();
     if (!empty($makeErrors)) {
         throw new RuntimeException('Erro ao montar a NF-e: ' . implode(' | ', array_slice($makeErrors, 0, 8)));
     }
-    $xml = $mk->getXML();
     if (!$xml) throw new RuntimeException('Falha ao montar o XML da NF-e.');
 
     $tools = makeTools($p);

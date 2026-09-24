@@ -81,3 +81,7 @@ A exigência específica da Portaria SRE 277/2025 para credenciamento da empresa
 ## Observação fiscal
 
 O sistema automatiza a emissão e expõe a rejeição real da SEFAZ. Regras tributárias especiais de um produto/operação podem exigir ajuste dos dados fiscais antes de um reenvio. Não force uma nota rejeitada trocando campos às cegas.
+
+
+## Correção de compatibilidade sped-nfe 5.2.8
+A montagem do XML usa `Make::getXML()`. A chamada antiga `Make::monta()` foi removida porque não existe na versão instalada pelo Composer.

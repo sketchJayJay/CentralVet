@@ -552,7 +552,7 @@ def emitir_devolucao_sefaz_internal(devolucao_id):
             db.execute("""
                 UPDATE devolucoes SET status=?, xml_assinado_path=COALESCE(NULLIF(?,''), xml_assinado_path),
                     sefaz_cstat=?, sefaz_motivo=?, ambiente_emissao=? WHERE id=?
-            """, ("Rejeitada SEFAZ" if cstat else "Falha na comunicação", result.get("signed_xml_path") or "", cstat, motivo, cfg_val(cfg, "ambiente"), devolucao_id))
+            """, ("Rejeitada SEFAZ" if cstat else "Falha antes do envio à SEFAZ", result.get("signed_xml_path") or "", cstat, motivo, cfg_val(cfg, "ambiente"), devolucao_id))
             db.commit()
     return result
 
@@ -1736,8 +1736,11 @@ def salvar_devolucao():
         flash(f"NF-e autorizada pela SEFAZ ✅ cStat {result.get('cStat')} - {result.get('xMotivo') or 'Autorizada'}", "ok")
         return redirect(url_for("danfe_devolucao", devolucao_id=devolucao_id))
     motivo_erro = result.get("xMotivo") or result.get("error") or "Falha na autorização"
-    cstat = result.get("cStat") or "-"
-    flash(f"NF-e não autorizada pela SEFAZ. cStat {cstat}: {motivo_erro}", "erro")
+    cstat = result.get("cStat")
+    if cstat:
+        flash(f"NF-e não autorizada pela SEFAZ. cStat {cstat}: {motivo_erro}", "erro")
+    else:
+        flash(f"Falha antes do envio à SEFAZ: {motivo_erro}", "erro")
     return redirect(url_for("ver_devolucao", devolucao_id=devolucao_id))
 
 @app.route("/devolucoes/<int:devolucao_id>")
@@ -1761,7 +1764,10 @@ def emitir_devolucao_sefaz(devolucao_id):
     if result.get("authorized"):
         flash(f"NF-e autorizada pela SEFAZ ✅ cStat {result.get('cStat')} - {result.get('xMotivo') or 'Autorizada'}", "ok")
         return redirect(url_for("danfe_devolucao", devolucao_id=devolucao_id))
-    flash(f"NF-e não autorizada. cStat {result.get('cStat') or '-'}: {result.get('xMotivo') or result.get('error') or 'Falha desconhecida'}", "erro")
+    if result.get("cStat"):
+        flash(f"NF-e não autorizada pela SEFAZ. cStat {result.get('cStat')}: {result.get('xMotivo') or result.get('error') or 'Falha desconhecida'}", "erro")
+    else:
+        flash(f"Falha antes do envio à SEFAZ: {result.get('error') or result.get('xMotivo') or 'Falha desconhecida'}", "erro")
     return redirect(url_for("ver_devolucao", devolucao_id=devolucao_id))
 
 
