@@ -1,19 +1,20 @@
-# CENTRALVET Agropecuária - Sistema Veltrix
+# CENTRALVET Agropecuária — NF-e direto com SEFAZ/MG
 
-Primeira base funcional para gestão de agropecuária com vendas, estoque, financeiro, recibos, configuração fiscal e importação de XML de nota de entrada.
+Esta versão inclui emissão de **NF-e modelo 55 de devolução diretamente na SEFAZ/MG**, sem provedor fiscal mensal.
 
-## Login inicial
+## Fluxo da devolução
 
-- Usuário: `admin`
-- Senha: `1234`
+1. Importar o XML da NF-e de compra original.
+2. Selecionar produtos e quantidades.
+3. O sistema detecta ST no XML e sugere CFOP por item.
+4. O sistema gera a NF-e de devolução (finNFe=4), referencia a chave original, assina com o certificado A1 e envia para a SEFAZ.
+5. Se a SEFAZ autorizar, o sistema salva chave/protocolo/XML autorizado, gera DANFE PDF e só então baixa o estoque.
+6. Se houver rejeição, mostra `cStat` e `xMotivo`, não baixa estoque e permite corrigir/tentar novamente com a mesma numeração.
 
-Pode alterar pelas variáveis de ambiente `ADMIN_USER` e `ADMIN_PASSWORD`.
+## Coolify
 
-## Deploy no Coolify
-
-Use Build Pack: **Dockerfile**
-
-Porta: `8080`
+Build Pack: **Dockerfile**  
+Porta: **8080**
 
 Variáveis:
 
@@ -21,130 +22,62 @@ Variáveis:
 PORT=8080
 PYTHONUNBUFFERED=1
 TZ=America/Sao_Paulo
-SECRET_KEY=centralvet-veltrix-2026
+SECRET_KEY=troque-por-uma-chave-forte
 DATA_DIR=/app/data
 ADMIN_USER=admin
-ADMIN_PASSWORD=1234
-AMBIENTE_FISCAL=homologacao
-UF_EMPRESA=MG
+ADMIN_PASSWORD=troque-a-senha
 CERTIFICADO_PATH=/app/certs/centralvet_a1.pfx
-CERTIFICADO_SENHA=COLOCAR_A_SENHA_NO_COOLIFY
+CERTIFICADO_SENHA=SENHA_REAL_DO_A1
+UF_EMPRESA=MG
 ```
 
-Storage principal do banco:
+Volumes persistentes:
 
 ```text
-Tipo: Volume Mount
-Volume Name: centralvet-agropecuaria-data
-Destination Path: /app/data
+/app/data
+/app/certs
 ```
 
-Certificado digital:
+O certificado deve existir em `/app/certs/centralvet_a1.pfx`. Não coloque o A1 nem a senha dentro do repositório/ZIP.
 
-```text
-NÃO coloque o certificado dentro do ZIP.
-Coloque o arquivo A1 em uma pasta/volume privado do servidor, por exemplo:
-/app/certs/centralvet_a1.pfx
-```
+## Dependências fiscais
 
-## Novidades desta versão fiscal
+O Dockerfile instala PHP + Composer e usa:
 
-- Tela Fiscal com dados da empresa.
-- Campo para ambiente Homologação/Produção.
-- Campos de série e número inicial NF-e/NFC-e.
-- Campos CSC/Token NFC-e.
-- Diagnóstico básico se o certificado e senha estão configurados via servidor.
-- Tela Importar XML.
-- Importação de XML de nota de entrada.
-- Cadastro automático de fornecedor pelo XML.
-- Cadastro automático de produtos pelo XML.
-- Atualização de produto existente por código/EAN/nome.
-- Lançamento automático de estoque pela nota.
-- Histórico de XMLs importados.
-- Bloqueio de importação duplicada por chave/hash do XML.
-- Produtos agora têm EAN e CEST.
+- `nfephp-org/sped-nfe` 5.2.8
+- `nfephp-org/sped-da` 1.1.6
 
-## Fiscal real
+O motor interno fica em `fiscal_engine/nfe_cli.php`.
 
-Esta versão deixa a estrutura pronta e já resolve a entrada por XML. A autorização real da NF-e/NFC-e precisa ser validada com certificado, CSC/Token, credenciamento, regime tributário, séries, numeração e regras fiscais dos produtos.
+## Primeira verificação após deploy
+
+Abra **Fiscal > Testar conexão SEFAZ**. O retorno operacional esperado do serviço de status é `cStat 107`.
+
+Depois, antes da primeira emissão real, confira na tela Fiscal:
+
+- Ambiente = Produção
+- Série NF-e e próximo número
+- Certificado A1 encontrado
+- Senha do A1 configurada
 
 
-## Atualização fiscal: Devolução por XML
+## Importante sobre redeploy e numeração
 
-Esta versão inclui o módulo de devolução de mercadoria:
+Mantenha os volumes `/app/data` e `/app/certs` ligados ao **mesmo volume persistente** no Coolify. A série e o próximo número têm valores-base no código para recuperar uma instalação vazia, mas, depois que uma NF-e real for autorizada, a sequência passa a ser atualizada em `/app/data/centralvet.db`. Trocar ou apagar esse volume pode fazer o sistema perder o histórico e a sequência local.
 
-1. Acesse **Fiscal NF-e/NFC-e > Nota de devolução** ou **Devoluções > Nova devolução**.
-2. Importe o XML da nota fiscal de compra original.
-3. Selecione os produtos avariados e informe as quantidades a devolver.
-4. Gere o rascunho da devolução.
-5. Valide CFOP/CST/CSOSN com o contador antes de emitir em produção.
+Antes da primeira NF-e real desta versão, use **Fiscal > Testar conexão SEFAZ**. Se o serviço estiver operacional, o retorno normal do status é `107 - Serviço em Operação`.
 
-A tela cria o rascunho vinculado à chave da NF-e original e permite baixar o estoque se necessário.
+## Software house em Minas Gerais
 
-## Versão modo fiscal acelerado
+A exigência específica da Portaria SRE 277/2025 para credenciamento da empresa desenvolvedora e preenchimento do Grupo ZD é aplicável ao contribuinte classificado no CNAE 4731-8 (comércio varejista de combustíveis). A CENTRALVET está cadastrada em outro CNAE, portanto essa regra específica não é ativada por essa portaria para esta empresa.
 
-Esta versão adiciona um botão em Fiscal NF-e/NFC-e chamado **Preencher básico p/ teste**.
+## Segurança operacional
 
-Ele completa campos provisórios para homologação quando a contabilidade demora a responder:
-- Série NF-e: 1
-- Número inicial NF-e: 1
-- Série NFC-e: 1
-- Número inicial NFC-e: 1
-- CFOP padrão provisório: 5102
-- CST/CSOSN padrão provisório: 102
-- Ambiente: Homologação
+- Em produção, a devolução só é enviada se o XML original estiver destinado ao CNPJ da CENTRALVET e tiver chave válida de 44 dígitos.
+- O estoque só é baixado depois da autorização da SEFAZ.
+- Uma NF-e autorizada não pode ser excluída pelo botão comum.
+- XMLs originais/autorizados e DANFEs ficam em `/app/data/fiscal`, portanto esse diretório deve estar em volume persistente e entrar na rotina de backup.
 
-Importante: esses dados são para teste/homologação. O sistema mantém produção bloqueada se faltar CSC/Token, séries, CFOP/CST/CSOSN, certificado ou senha.
+## Observação fiscal
 
-## Atualização fiscal com documentos da CENTRALVET
-Esta versão já vem com preenchimento dos dados cadastrais da empresa conforme documentos enviados:
-- Razão social: CENTRALVET AGROPECUARIA LTDA
-- Nome fantasia: CENTRALVET AGROPECUARIA
-- CNPJ: 68.690.225/0001-50
-- Inscrição Estadual: 005626088.00-49
-- Regime: SIMPLES NACIONAL
-- Endereço: R MANOEL FRANCISCO DE CASTRO, 21, B, CENTRO, ORIZANIA/MG, CEP 36.828-000
-
-Na tela Fiscal existe o botão “Preencher dados da empresa”. Ele restaura esses dados e mantém o ambiente em Homologação. Produção continua dependendo de CSC/Token, séries, CFOP/CST/CSOSN e regras fiscais corretas.
-
-## Atualização: assistente de CFOP para devolução
-
-Na tela **Devoluções > Nova devolução**, depois de importar o XML da compra, o sistema agora permite escolher:
-
-- Mesmo estado (MG) ou outro estado
-- Sem substituição tributária ou com substituição tributária
-
-Com isso, o sistema sugere automaticamente:
-
-- 5202: mesmo estado, sem ST
-- 6202: outro estado, sem ST
-- 5411: mesmo estado, com ST
-- 6411: outro estado, com ST
-
-O campo continua editável por produto para exceções fiscais.
-
-
-## Instalar como aplicativo no Microsoft Edge
-
-Esta versão foi configurada como PWA. Depois do deploy:
-
-1. Abra o sistema no Microsoft Edge pelo notebook.
-2. Clique nos três pontinhos do Edge.
-3. Vá em **Aplicativos**.
-4. Clique em **Instalar este site como aplicativo**.
-5. Abra pelo atalho criado na área de trabalho ou menu Iniciar.
-
-O app abre sem a barra normal do navegador, com visual de aplicativo e manifestação em modo tela cheia/standalone.
-
-## Atualização - CFOP de devolução automático por XML
-- Ao importar o XML da nota de compra, o sistema verifica UF do fornecedor e sinais de ICMS-ST por produto.
-- Se o produto vier sem ST, sugere 5202 para MG ou 6202 para outro estado.
-- Se o produto vier com ST, sugere 5411 para MG ou 6411 para outro estado.
-- O campo continua editável por produto para exceções fiscais.
-
-
-## Fluxo simplificado de devolução
-- Sem status de rascunho/emitida pelo contador/cancelada na interface.
-- Botão único: Emitir devolução e imprimir.
-- Após salvar, abre automaticamente a tela de impressão.
-- CFOP continua sugerido automaticamente pelo XML e pode ser ajustado antes da emissão.
+O sistema automatiza a emissão e expõe a rejeição real da SEFAZ. Regras tributárias especiais de um produto/operação podem exigir ajuste dos dados fiscais antes de um reenvio. Não force uma nota rejeitada trocando campos às cegas.

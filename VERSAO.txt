@@ -1,0 +1,5 @@
+CENTRALVET Agropecuária
+Versão: SEFAZ direto / NF-e devolução
+Data: 2026-09-24
+Motor fiscal: NFePHP
+Intermediário mensal: nenhum

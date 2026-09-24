@@ -1,0 +1,17 @@
+{
+  "name": "veltrix/centralvet-fiscal",
+  "description": "Motor fiscal interno CENTRALVET para NF-e direto com SEFAZ",
+  "type": "project",
+  "require": {
+    "php": ">=7.4",
+    "nfephp-org/sped-nfe": "5.2.8",
+    "nfephp-org/sped-da": "1.1.6"
+  },
+  "config": {
+    "optimize-autoloader": true,
+    "sort-packages": true,
+    "allow-plugins": {}
+  },
+  "minimum-stability": "stable",
+  "prefer-stable": true
+}

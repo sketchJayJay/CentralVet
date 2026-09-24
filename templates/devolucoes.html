@@ -3,7 +3,7 @@
 <section class="hero">
   <span class="badge">Devoluções</span>
   <h1>Notas de devolução</h1>
-  <p>Importe o XML da compra original, selecione os produtos e emita a devolução pronta para impressão.</p>
+  <p>Importe o XML da compra original e envie a NF-e de devolução diretamente para autorização da SEFAZ.</p>
   <div class="actions">
     <a class="btn green" href="{{ url_for('nova_devolucao') }}">+ Nova devolução</a>
     <a class="btn secondary" href="{{ url_for('fiscal') }}">Voltar ao fiscal</a>
@@ -17,7 +17,7 @@
   </form>
   <div class="table-wrap">
     <table>
-      <thead><tr><th>#</th><th>Data</th><th>Fornecedor</th><th>NF origem</th><th>Motivo</th><th>Ações</th></tr></thead>
+      <thead><tr><th>#</th><th>Data</th><th>Fornecedor</th><th>NF origem</th><th>Status</th><th>NF-e devolução</th><th>Ações</th></tr></thead>
       <tbody>
       {% for d in rows %}
       <tr>
@@ -25,10 +25,11 @@
         <td>{{d.data|brdate}}</td>
         <td><b>{{d.fornecedor_nome or '-'}}</b><br><small>{{d.fornecedor_cnpj or ''}}</small></td>
         <td>{{d.numero_origem or '-'}} / Série {{d.serie_origem or '-'}}</td>
-        <td>{{d.motivo}}</td>
-        <td><a class="btn secondary" href="{{ url_for('ver_devolucao', devolucao_id=d.id) }}">Abrir</a></td>
+        <td><span class="pill {{ 'green' if d.status == 'Autorizada SEFAZ' else 'warn' }}">{{d.status}}</span>{% if d.sefaz_cstat %}<br><small>cStat {{d.sefaz_cstat}}</small>{% endif %}</td>
+        <td>{{d.nf_devolucao_numero or '-'}}</td>
+        <td><a class="btn secondary" href="{{ url_for('ver_devolucao', devolucao_id=d.id) }}">Abrir</a>{% if d.status == 'Autorizada SEFAZ' %} <a class="btn green" target="_blank" href="{{ url_for('danfe_devolucao', devolucao_id=d.id) }}">DANFE</a>{% endif %}</td>
       </tr>
-      {% else %}<tr><td colspan="6">Nenhuma devolução criada ainda.</td></tr>{% endfor %}
+      {% else %}<tr><td colspan="7">Nenhuma devolução criada ainda.</td></tr>{% endfor %}
       </tbody>
     </table>
   </div>

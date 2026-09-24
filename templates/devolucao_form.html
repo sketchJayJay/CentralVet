@@ -2,13 +2,13 @@
 {% block content %}
 <section class="hero">
   <span class="badge">Nota de devolução</span>
-  <h1>Gerar devolução pela nota de compra</h1>
-  <p>Use o XML da compra original. O sistema puxa fornecedor, chave da NF-e, produtos, NCM, CFOP, unidade, quantidade e valores.</p>
+  <h1>Emitir NF-e de devolução na SEFAZ</h1>
+  <p>Use o XML da compra original. O sistema monta a NF-e modelo 55, assina com o A1 e envia direto para autorização da SEFAZ/MG.</p>
 </section>
 
 <div class="card dark">
   <h2>Fluxo recomendado</h2>
-  <p style="color:#b9d7ee">1) Importe o XML da compra original. 2) Selecione os produtos avariados. 3) Escolha se a devolução é para o mesmo estado ou outro estado. 4) O sistema sugere o CFOP. 5) Clique em Emitir e imprimir.</p>
+  <p style="color:#b9d7ee">1) Importe o XML da compra original. 2) Selecione os produtos. 3) O sistema detecta ST e sugere o CFOP. 4) Clique em Emitir NF-e. 5) Só depois da autorização da SEFAZ o DANFE oficial é liberado para impressão.</p>
 </div>
 
 {% if not preview %}
@@ -41,7 +41,14 @@
   </div>
 </div>
 
-<form method="post" action="{{ url_for('salvar_devolucao') }}" class="card">
+{% if producao %}
+<div class="card" style="border:2px solid #d66b25">
+  <h2>⚠️ Ambiente de PRODUÇÃO</h2>
+  <p>Ao confirmar, esta NF-e será enviada de verdade para a SEFAZ/MG usando a próxima numeração configurada. Se autorizada, passa a ter validade fiscal.</p>
+</div>
+{% endif %}
+
+<form method="post" action="{{ url_for('salvar_devolucao') }}" class="card" id="formEmitirDevolucao" onsubmit="return confirmarEmissaoReal()">
   <input type="hidden" name="xml_data" value="{{ encoded_xml }}">
   <h2>Produtos para devolver</h2>
   <div class="row">
@@ -87,7 +94,7 @@
     </table>
   </div>
   <div class="actions">
-    <button class="green">Emitir devolução e imprimir</button>
+    <button class="green">EMITIR NF-e NA SEFAZ E ABRIR DANFE</button>
     <a class="btn secondary" href="{{ url_for('nova_devolucao') }}">Importar outro XML</a>
   </div>
 </form>
@@ -163,5 +170,10 @@ document.addEventListener('input', function(e){
   if(e.target && e.target.classList.contains('cfop-item-dev')) e.target.dataset.manual = '1';
 });
 document.addEventListener('DOMContentLoaded', atualizarCfopDev);
+function confirmarEmissaoReal(){
+  const producao = {{ 'true' if producao else 'false' }};
+  if(!producao) return true;
+  return confirm('ATENÇÃO: esta é uma emissão REAL em PRODUÇÃO. A NF-e será enviada para a SEFAZ/MG. Confirma os produtos, quantidades e CFOPs?');
+}
 </script>
 {% endblock %}

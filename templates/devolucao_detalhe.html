@@ -2,29 +2,62 @@
 {% block content %}
 <section class="hero">
   <span class="badge">Devolução #{{dev.id}}</span>
-  <h1>Nota de devolução</h1>
-  <p>Documento montado automaticamente a partir do XML da nota original, com os produtos e quantidades selecionados para devolução.</p>
+  <h1>NF-e de devolução</h1>
+  {% if dev.status == 'Autorizada SEFAZ' %}
+    <p>NF-e autorizada pela SEFAZ. O DANFE abaixo é o documento oficial para impressão.</p>
+  {% else %}
+    <p>A NF-e ainda não foi autorizada. Veja o retorno da SEFAZ e corrija antes de tentar novamente.</p>
+  {% endif %}
   <div class="actions">
     <a class="btn secondary" href="{{ url_for('devolucoes') }}">Voltar</a>
     <a class="btn" href="{{ url_for('nova_devolucao') }}">Nova devolução</a>
-    <button class="green" onclick="window.print()">Imprimir nota de devolução</button>
+    {% if dev.status == 'Autorizada SEFAZ' %}
+      <a class="btn green" target="_blank" href="{{ url_for('danfe_devolucao', devolucao_id=dev.id) }}">Abrir / imprimir DANFE oficial</a>
+      <a class="btn secondary" href="{{ url_for('xml_devolucao', devolucao_id=dev.id) }}">Baixar XML autorizado</a>
+    {% else %}
+      <form method="post" action="{{ url_for('emitir_devolucao_sefaz', devolucao_id=dev.id) }}" style="display:inline" onsubmit="return confirm('Enviar esta NF-e para autorização da SEFAZ agora?')">
+        <button class="green">Tentar autorização novamente</button>
+      </form>
+    {% endif %}
   </div>
 </section>
 
 <div class="grid">
-  <div class="card metric"><div class="label">NF origem</div><div class="value">{{dev.numero_origem or '-'}}</div></div>
+  <div class="card metric"><div class="label">Status</div><div class="value {{ 'green' if dev.status == 'Autorizada SEFAZ' else 'warn' }}">{{dev.status or '-'}}</div></div>
+  <div class="card metric"><div class="label">NF-e devolução</div><div class="value">{{dev.nf_devolucao_numero or '-'}}</div></div>
   <div class="card metric"><div class="label">Total devolução</div><div class="value green">{{total|money}}</div></div>
-  <div class="card metric"><div class="label">Estoque</div><div class="value {{ 'green' if dev.baixou_estoque else 'warn' }}">{{ 'Baixado' if dev.baixou_estoque else 'Não baixado' }}</div></div>
+  <div class="card metric"><div class="label">Estoque</div><div class="value {{ 'green' if dev.baixou_estoque else 'warn' }}">{{ 'Baixado após autorização' if dev.baixou_estoque else 'Aguardando autorização' }}</div></div>
 </div>
 
+{% if dev.status == 'Autorizada SEFAZ' %}
+<div class="card" style="border:2px solid #19a974">
+  <h2>✅ Autorizada pela SEFAZ</h2>
+  <div class="row">
+    <div><label>cStat</label><input readonly value="{{dev.sefaz_cstat or '100'}}"></div>
+    <div><label>Protocolo de autorização</label><input readonly value="{{dev.protocolo_autorizacao or '-'}}"></div>
+    <div><label>Ambiente</label><input readonly value="{{dev.ambiente_emissao or '-'}}"></div>
+    <div><label>Autorizada em</label><input readonly value="{{dev.autorizado_em or '-'}}"></div>
+    <div style="grid-column:span 4"><label>Chave da NF-e de devolução</label><input readonly value="{{dev.nf_devolucao_chave or '-'}}"></div>
+  </div>
+</div>
+{% else %}
+<div class="card dark">
+  <h2>Retorno da SEFAZ</h2>
+  <div class="row">
+    <div><label>cStat</label><input readonly value="{{dev.sefaz_cstat or '-'}}"></div>
+    <div style="grid-column:span 3"><label>Motivo / rejeição</label><input readonly value="{{dev.sefaz_motivo or 'Aguardando nova tentativa de autorização.'}}"></div>
+  </div>
+  <p style="color:#b9d7ee;margin-bottom:0">Nenhum DANFE é tratado como válido enquanto a SEFAZ não retornar autorização.</p>
+</div>
+{% endif %}
+
 <div class="card">
-  <h2>Dados da nota original</h2>
+  <h2>Nota de compra referenciada</h2>
   <div class="row">
     <div style="grid-column:span 2"><label>Fornecedor</label><input readonly value="{{dev.fornecedor_nome or '-'}}"></div>
     <div><label>CNPJ/CPF</label><input readonly value="{{dev.fornecedor_cnpj or '-'}}"></div>
+    <div><label>NF origem</label><input readonly value="{{dev.numero_origem or '-'}} / Série {{dev.serie_origem or '-'}}"></div>
     <div><label>Emissão origem</label><input readonly value="{{dev.emissao_origem|brdate}}"></div>
-    <div style="grid-column:span 2"><label>Destinatário</label><input readonly value="{{dev.destinatario_nome or '-'}}"></div>
-    <div><label>CNPJ/CPF destinatário</label><input readonly value="{{dev.destinatario_cnpj or '-'}}"></div>
     <div><label>Motivo</label><input readonly value="{{dev.motivo}}"></div>
     <div style="grid-column:span 4"><label>Chave da NF-e original</label><input readonly value="{{dev.chave_origem or '-'}}"></div>
   </div>
@@ -34,7 +67,7 @@
   <h2>Itens da devolução</h2>
   <div class="table-wrap">
     <table>
-      <thead><tr><th>Produto</th><th>Qtd original</th><th>Qtd devolver</th><th>Valor unit.</th><th>Total</th><th>NCM</th><th>CFOP origem</th><th>CFOP devolução</th><th>CST/CSOSN</th></tr></thead>
+      <thead><tr><th>Produto</th><th>Qtd original</th><th>Qtd devolver</th><th>Valor unit.</th><th>Total</th><th>NCM</th><th>CFOP origem</th><th>CFOP devolução</th><th>CST/CSOSN origem</th></tr></thead>
       <tbody>
       {% for i in itens %}
       <tr>
@@ -45,7 +78,7 @@
         <td><b>{{i.valor_total|money}}</b></td>
         <td>{{i.ncm or '-'}}</td>
         <td>{{i.cfop_original or '-'}}</td>
-        <td>{{i.cfop_devolucao or 'Confirmar'}}</td>
+        <td>{{i.cfop_devolucao or '-'}}</td>
         <td>{{i.cst_csosn or '-'}}</td>
       </tr>
       {% else %}<tr><td colspan="9">Nenhum item lançado.</td></tr>{% endfor %}
@@ -54,19 +87,13 @@
   </div>
 </div>
 
-<div class="card hide-print">
+{% if dev.status != 'Autorizada SEFAZ' %}
+<div class="card">
   <h2>Ações</h2>
-  <div class="actions">
-    <button class="green" onclick="window.print()">Imprimir nota de devolução</button>
-    <form method="post" action="{{ url_for('excluir_devolucao', devolucao_id=dev.id) }}" onsubmit="return confirm('Excluir esta devolução?')" style="display:inline">
-      <button class="danger">Excluir devolução</button>
-    </form>
-  </div>
+  <p>Se a nota foi rejeitada, ajuste o que a SEFAZ informou e tente novamente. A numeração fica reservada para esta tentativa.</p>
+  <form method="post" action="{{ url_for('excluir_devolucao', devolucao_id=dev.id) }}" onsubmit="return confirm('Excluir esta tentativa não autorizada?')" style="display:inline">
+    <button class="danger">Excluir tentativa</button>
+  </form>
 </div>
-
-{% if request.args.get('imprimir') == '1' %}
-<script>
-window.addEventListener('load', function(){ setTimeout(function(){ window.print(); }, 350); });
-</script>
 {% endif %}
 {% endblock %}

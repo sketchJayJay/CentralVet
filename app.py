@@ -5,8 +5,10 @@ import shutil
 import hashlib
 import base64
 import json
+import subprocess
 import xml.etree.ElementTree as ET
 from datetime import datetime, date
+from zoneinfo import ZoneInfo
 from functools import wraps
 from flask import Flask, render_template, request, redirect, url_for, flash, session, send_file, jsonify, send_from_directory, make_response
 
@@ -15,7 +17,12 @@ DATA_DIR = os.environ.get("DATA_DIR", os.path.join(os.path.dirname(__file__), "d
 os.makedirs(DATA_DIR, exist_ok=True)
 DB_PATH = os.path.join(DATA_DIR, "centralvet.db")
 BACKUP_DIR = os.path.join(DATA_DIR, "backups")
+FISCAL_DIR = os.path.join(DATA_DIR, "fiscal")
+FISCAL_ORIGINAL_DIR = os.path.join(FISCAL_DIR, "originais")
+FISCAL_NFE_DIR = os.path.join(FISCAL_DIR, "nfe")
 os.makedirs(BACKUP_DIR, exist_ok=True)
+os.makedirs(FISCAL_ORIGINAL_DIR, exist_ok=True)
+os.makedirs(FISCAL_NFE_DIR, exist_ok=True)
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 8 * 1024 * 1024
@@ -38,7 +45,7 @@ FISCAL_DEFAULTS = {
     "telefone": "(31) 3875-1342",
     "email": "CONTABILIDADEREIS01@HOTMAIL.COM",
     "regime": "SIMPLES NACIONAL",
-    "ambiente": "Homologação",
+    "ambiente": "Produção",
     "certificado_nome": "A1 CENTRALVET válido até 05/09/2027",
     "certificado_path": "/app/certs/centralvet_a1.pfx",
     "certificado_senha_env": "CERTIFICADO_SENHA",
@@ -50,7 +57,14 @@ FISCAL_DEFAULTS = {
     "csc_token": "4b24675b696846632d2ed5e0519baa7b",
     "cfop_padrao": "5102",
     "cst_csosn_padrao": "102",
-    "observacao": "Dados fiscais base fixados no sistema para homologação. Confirmar regras fiscais finais antes de produção.",
+    "observacao": "Emissão direta NF-e pela SEFAZ/MG. Dados cadastrais base fixados no sistema.",
+    "logradouro": "R MANOEL FRANCISCO DE CASTRO",
+    "numero": "21",
+    "complemento": "B",
+    "bairro": "CENTRO",
+    "codigo_municipio": "3145877",
+    "cnae": "4683400",
+    "crt": 1,
 }
 
 
@@ -287,6 +301,7 @@ def parse_nfe_xml(xml_bytes):
         cfop_origem = xml_first_text(prod, "CFOP")
         st_info = analisar_st_produto(det, cfop_origem)
         item = {
+            "item_origem_idx": int(det.attrib.get("nItem") or (len(dados["itens"]) + 1)),
             "codigo": xml_first_text(prod, "cProd"),
             "ean": xml_first_text(prod, "cEAN") or xml_first_text(prod, "cEANTrib"),
             "nome": xml_first_text(prod, "xProd"),
@@ -319,6 +334,13 @@ def sugerir_cfop_devolucao(tipo_operacao="mesmo_estado", substituicao="sem_st"):
 
 def cert_runtime_status():
     path = os.environ.get("CERTIFICADO_PATH", "").strip()
+    if not path:
+        try:
+            cfg = fetch_one("SELECT certificado_path FROM fiscal_config WHERE id=1")
+            path = (cfg["certificado_path"] if cfg and cfg["certificado_path"] else "").strip()
+        except Exception:
+            path = ""
+    path = path or FISCAL_DEFAULTS["certificado_path"]
     has_pass = bool(os.environ.get("CERTIFICADO_SENHA", "").strip())
     exists = bool(path and os.path.exists(path))
     return {"path": path, "has_password": has_pass, "exists": exists}
@@ -353,6 +375,186 @@ def fiscal_prod_ready(cfg, cert_status):
     if not cert_status.get("has_password"):
         missing.append("senha_certificado")
     return (len(missing) == 0, missing)
+
+
+def fiscal_issuer_payload(cfg):
+    return {
+        "razao_social": cfg_val(cfg, "razao_social"),
+        "nome_fantasia": cfg_val(cfg, "nome_fantasia"),
+        "cnpj": only_digits(cfg_val(cfg, "cnpj")),
+        "inscricao_estadual": only_digits(cfg_val(cfg, "inscricao_estadual")),
+        "logradouro": cfg_val(cfg, "logradouro") or FISCAL_DEFAULTS["logradouro"],
+        "numero": cfg_val(cfg, "numero") or FISCAL_DEFAULTS["numero"],
+        "complemento": cfg_val(cfg, "complemento") or FISCAL_DEFAULTS["complemento"],
+        "bairro": cfg_val(cfg, "bairro") or FISCAL_DEFAULTS["bairro"],
+        "codigo_municipio": only_digits(cfg_val(cfg, "codigo_municipio") or FISCAL_DEFAULTS["codigo_municipio"]),
+        "municipio": cfg_val(cfg, "municipio") or FISCAL_DEFAULTS["municipio"],
+        "uf": (cfg_val(cfg, "uf") or "MG").upper(),
+        "cep": only_digits(cfg_val(cfg, "cep")),
+        "telefone": only_digits(cfg_val(cfg, "telefone")),
+        "cnae": only_digits(cfg_val(cfg, "cnae") or FISCAL_DEFAULTS["cnae"]),
+        "crt": int(cfg_val(cfg, "crt") or FISCAL_DEFAULTS["crt"]),
+        "csc_id": cfg_val(cfg, "csc_id"),
+        "csc_token": cfg_val(cfg, "csc_token"),
+    }
+
+
+def fiscal_tpamb(cfg):
+    return 1 if cfg_val(cfg, "ambiente").lower().startswith("produ") else 2
+
+
+def run_fiscal_engine(payload, timeout=90):
+    cli = os.path.join(app.root_path, "fiscal_engine", "nfe_cli.php")
+    if not os.path.isfile(cli):
+        return {"ok": False, "authorized": False, "error": "Motor fiscal interno não encontrado no servidor."}
+    try:
+        proc = subprocess.run(
+            ["php", cli],
+            input=json.dumps(payload, ensure_ascii=False),
+            text=True,
+            capture_output=True,
+            timeout=timeout,
+            cwd=app.root_path,
+        )
+    except FileNotFoundError:
+        return {"ok": False, "authorized": False, "error": "PHP/NFePHP não instalado. Faça o deploy usando o Dockerfile desta versão."}
+    except subprocess.TimeoutExpired:
+        return {"ok": False, "authorized": False, "error": "A SEFAZ não respondeu dentro do tempo limite. Tente novamente; o sistema manterá a mesma numeração."}
+    raw = (proc.stdout or "").strip()
+    try:
+        data = json.loads(raw) if raw else {}
+    except Exception:
+        detail = (proc.stderr or raw or "sem retorno").strip()[-1200:]
+        return {"ok": False, "authorized": False, "error": f"Retorno inválido do motor fiscal: {detail}"}
+    if not isinstance(data, dict):
+        return {"ok": False, "authorized": False, "error": "Retorno inválido do motor fiscal."}
+    if proc.returncode != 0 and not data.get("error"):
+        data["error"] = (proc.stderr or "Falha no motor fiscal.").strip()[-1200:]
+        data["ok"] = False
+    return data
+
+
+def fiscal_engine_base_payload(cfg):
+    cert_path = os.environ.get("CERTIFICADO_PATH", "").strip() or cfg_val(cfg, "certificado_path") or FISCAL_DEFAULTS["certificado_path"]
+    return {
+        "issuer": fiscal_issuer_payload(cfg),
+        "tpAmb": fiscal_tpamb(cfg),
+        "cert_path": cert_path,
+        "cert_password": os.environ.get("CERTIFICADO_SENHA", ""),
+    }
+
+
+def fiscal_safe_file(path):
+    if not path:
+        return None
+    try:
+        rp = os.path.realpath(path)
+        base = os.path.realpath(FISCAL_DIR) + os.sep
+        if not rp.startswith(base) or not os.path.isfile(rp):
+            return None
+        return rp
+    except Exception:
+        return None
+
+
+def apply_devolucao_stock_once(db, devolucao_id):
+    dev = db.execute("SELECT * FROM devolucoes WHERE id=?", (devolucao_id,)).fetchone()
+    if not dev or int(dev["baixou_estoque"] or 0) == 1 or int(dev["baixar_estoque_solicitado"] or 0) != 1:
+        return
+    itens = db.execute("SELECT * FROM devolucao_itens WHERE devolucao_id=?", (devolucao_id,)).fetchall()
+    for i in itens:
+        if i["produto_id"]:
+            qtd = float(i["quantidade_devolver"] or 0)
+            valor_unit = float(i["valor_unitario"] or 0)
+            db.execute("UPDATE produtos SET estoque=estoque-? WHERE id=?", (qtd, i["produto_id"]))
+            db.execute("""
+                INSERT INTO estoque_mov (data, produto_id, tipo, quantidade, custo_unit, valor_total, origem, observacao)
+                VALUES (?, ?, 'Saída', ?, ?, ?, ?, ?)
+            """, (dev["data"] or today_str(), i["produto_id"], qtd, valor_unit, qtd * valor_unit,
+                  f"DEVOLUCAO #{devolucao_id}", f"Saída após autorização SEFAZ. NF origem {dev['numero_origem'] or ''}. Chave {dev['chave_origem'] or ''}"))
+    db.execute("UPDATE devolucoes SET baixou_estoque=1 WHERE id=?", (devolucao_id,))
+
+
+def emitir_devolucao_sefaz_internal(devolucao_id):
+    cfg = fetch_one("SELECT * FROM fiscal_config WHERE id=1")
+    dev = fetch_one("SELECT * FROM devolucoes WHERE id=?", (devolucao_id,))
+    itens = fetch_all("SELECT * FROM devolucao_itens WHERE devolucao_id=? ORDER BY id", (devolucao_id,))
+    if not cfg or not dev or not itens:
+        return {"ok": False, "authorized": False, "error": "Devolução ou configuração fiscal não encontrada."}
+    if cfg_val(dev, "status") == "Autorizada SEFAZ" and cfg_val(dev, "protocolo_autorizacao"):
+        return {"ok": True, "authorized": True, "cStat": cfg_val(dev, "sefaz_cstat") or "100", "xMotivo": cfg_val(dev, "sefaz_motivo") or "Autorizada", "chave": cfg_val(dev, "nf_devolucao_chave"), "protocolo": cfg_val(dev, "protocolo_autorizacao"), "xml_path": cfg_val(dev, "xml_autorizado_path"), "danfe_path": cfg_val(dev, "danfe_path")}
+
+    cert = cert_runtime_status()
+    if not cert.get("exists"):
+        return {"ok": False, "authorized": False, "error": f"Certificado A1 não encontrado em {cert.get('path') or 'CERTIFICADO_PATH'}."}
+    if not cert.get("has_password"):
+        return {"ok": False, "authorized": False, "error": "A variável CERTIFICADO_SENHA não está configurada no Coolify."}
+    original_path = fiscal_safe_file(dev["xml_original_path"])
+    if not original_path:
+        return {"ok": False, "authorized": False, "error": "XML original não foi encontrado no armazenamento persistente. Importe a nota novamente."}
+
+    serie = int(only_digits(cfg_val(cfg, "nf_serie") or "1") or 1)
+    current_num = int(only_digits(cfg_val(cfg, "nf_numero_inicial") or "1") or 1)
+    if cfg_val(dev, "nf_devolucao_numero"):
+        nnf = int(only_digits(cfg_val(dev, "nf_devolucao_numero")) or current_num)
+    else:
+        nnf = current_num
+        exec_sql("UPDATE devolucoes SET nf_devolucao_numero=? WHERE id=?", (str(nnf), devolucao_id))
+    issue_dt = cfg_val(dev, "emissao_tentativa_em")
+    if not issue_dt:
+        issue_dt = datetime.now(ZoneInfo("America/Sao_Paulo")).isoformat(timespec="seconds")
+        exec_sql("UPDATE devolucoes SET emissao_tentativa_em=? WHERE id=?", (issue_dt, devolucao_id))
+    cNF = str(int(hashlib.sha256(f"{only_digits(cfg_val(cfg,'cnpj'))}:{serie}:{nnf}:{devolucao_id}".encode()).hexdigest()[:12], 16) % 100000000).zfill(8)
+    output_dir = os.path.join(FISCAL_NFE_DIR, str(devolucao_id))
+    os.makedirs(output_dir, exist_ok=True)
+
+    payload = fiscal_engine_base_payload(cfg)
+    payload.update({
+        "action": "emit_return",
+        "original_xml_path": original_path,
+        "chave_origem": dev["chave_origem"],
+        "serie": serie,
+        "nNF": nnf,
+        "cNF": cNF,
+        "issue_datetime": issue_dt,
+        "lote_id": f"{devolucao_id}{nnf}",
+        "motivo": dev["motivo"] or "Devolução de mercadoria",
+        "output_dir": output_dir,
+        "items": [{
+            "item_origem_idx": int(i["item_origem_idx"] or 0),
+            "codigo": i["codigo"], "ean": i["ean"], "nome": i["nome"], "ncm": i["ncm"], "cest": i["cest"],
+            "cfop_devolucao": i["cfop_devolucao"], "unidade": i["unidade"],
+            "quantidade_original": float(i["quantidade_original"] or 0),
+            "quantidade_devolver": float(i["quantidade_devolver"] or 0),
+            "valor_unitario": float(i["valor_unitario"] or 0),
+        } for i in itens],
+    })
+    result = run_fiscal_engine(payload, timeout=120)
+    now = datetime.now(ZoneInfo("America/Sao_Paulo")).isoformat(timespec="seconds")
+    if result.get("authorized"):
+        with get_db() as db:
+            db.execute("""
+                UPDATE devolucoes SET status='Autorizada SEFAZ', nf_devolucao_chave=?, protocolo_autorizacao=?,
+                    xml_assinado_path=?, xml_autorizado_path=?, danfe_path=?, sefaz_cstat=?, sefaz_motivo=?,
+                    autorizado_em=?, ambiente_emissao=? WHERE id=?
+            """, (result.get("chave") or "", result.get("protocolo") or "", result.get("signed_xml_path") or "",
+                  result.get("xml_path") or "", result.get("danfe_path") or "", result.get("cStat") or "100",
+                  result.get("xMotivo") or "Autorizado o uso da NF-e", now, cfg_val(cfg, "ambiente"), devolucao_id))
+            apply_devolucao_stock_once(db, devolucao_id)
+            next_num = max(current_num, nnf + 1)
+            db.execute("UPDATE fiscal_config SET nf_numero_inicial=? WHERE id=1", (str(next_num),))
+            db.commit()
+        backup_db("nfe-devolucao-autorizada")
+    else:
+        motivo = result.get("xMotivo") or result.get("error") or "Falha não identificada na autorização."
+        cstat = str(result.get("cStat") or "")
+        with get_db() as db:
+            db.execute("""
+                UPDATE devolucoes SET status=?, xml_assinado_path=COALESCE(NULLIF(?,''), xml_assinado_path),
+                    sefaz_cstat=?, sefaz_motivo=?, ambiente_emissao=? WHERE id=?
+            """, ("Rejeitada SEFAZ" if cstat else "Falha na comunicação", result.get("signed_xml_path") or "", cstat, motivo, cfg_val(cfg, "ambiente"), devolucao_id))
+            db.commit()
+    return result
 
 def init_db():
     with get_db() as db:
@@ -549,9 +751,22 @@ def init_db():
         for column, ddl in [
             ('certificado_path', 'TEXT'), ('certificado_senha_env', 'TEXT'), ('nf_serie', 'TEXT'), ('nf_numero_inicial', 'TEXT'),
             ('nfce_serie', 'TEXT'), ('nfce_numero_inicial', 'TEXT'), ('csc_id', 'TEXT'), ('csc_token', 'TEXT'),
-            ('cfop_padrao', 'TEXT'), ('cst_csosn_padrao', 'TEXT')
+            ('cfop_padrao', 'TEXT'), ('cst_csosn_padrao', 'TEXT'), ('logradouro', 'TEXT'), ('numero', 'TEXT'),
+            ('complemento', 'TEXT'), ('bairro', 'TEXT'), ('codigo_municipio', 'TEXT'), ('cnae', 'TEXT'), ('crt', 'INTEGER DEFAULT 1')
         ]:
             add_column(db, 'fiscal_config', column, ddl)
+        for column, ddl in [
+            ('xml_original_path', 'TEXT'), ('xml_assinado_path', 'TEXT'), ('xml_autorizado_path', 'TEXT'), ('danfe_path', 'TEXT'),
+            ('protocolo_autorizacao', 'TEXT'), ('sefaz_cstat', 'TEXT'), ('sefaz_motivo', 'TEXT'), ('autorizado_em', 'TEXT'),
+            ('ambiente_emissao', 'TEXT'), ('baixar_estoque_solicitado', 'INTEGER DEFAULT 1'), ('emissao_tentativa_em', 'TEXT')
+        ]:
+            add_column(db, 'devolucoes', column, ddl)
+        add_column(db, 'devolucao_itens', 'item_origem_idx', 'INTEGER')
+        db.execute("""UPDATE fiscal_config SET
+            logradouro=COALESCE(NULLIF(logradouro,''), :logradouro), numero=COALESCE(NULLIF(numero,''), :numero),
+            complemento=COALESCE(NULLIF(complemento,''), :complemento), bairro=COALESCE(NULLIF(bairro,''), :bairro),
+            codigo_municipio=COALESCE(NULLIF(codigo_municipio,''), :codigo_municipio), cnae=COALESCE(NULLIF(cnae,''), :cnae),
+            crt=COALESCE(crt, :crt) WHERE id=1""", FISCAL_DEFAULTS)
         # Fill empty fiscal fields on existing deployments, preserving manual changes already made in the system.
         db.execute("""
             UPDATE fiscal_config SET
@@ -1069,15 +1284,29 @@ def fiscal():
     prod_ready, prod_missing = fiscal_prod_ready(cfg, cert_status)
     return render_template("fiscal.html", cfg=cfg, notas=notas, xmls=xmls, devolucoes=devolucoes, cert_status=cert_status, envs=envs, checklist=checklist, prod_ready=prod_ready, prod_missing=prod_missing)
 
+@app.route("/fiscal/testar-sefaz", methods=["POST"])
+@login_required
+def fiscal_testar_sefaz():
+    cfg = fetch_one("SELECT * FROM fiscal_config WHERE id=1")
+    payload = fiscal_engine_base_payload(cfg)
+    payload["action"] = "status"
+    result = run_fiscal_engine(payload, timeout=45)
+    if result.get("ok") and str(result.get("cStat") or "") == "107":
+        flash(f"SEFAZ/MG online ✅ cStat 107 - {result.get('xMotivo') or 'Serviço em operação'}", "ok")
+    elif result.get("ok"):
+        flash(f"Retorno da SEFAZ: cStat {result.get('cStat') or '-'} - {result.get('xMotivo') or 'sem descrição'}", "erro")
+    else:
+        flash(f"Não consegui consultar a SEFAZ: {result.get('error') or 'falha desconhecida'}", "erro")
+    return redirect(url_for("fiscal"))
+
+
 @app.route("/fiscal/preencher-padrao", methods=["POST"])
 @login_required
 def fiscal_preencher_padrao():
-    """Preenche campos para homologação quando a contabilidade demora a responder.
-    Inclui as séries e CSC/Token já recebidos, mas mantém em Homologação por segurança.
-    """
+    """Restaura campos fiscais base sem mudar o ambiente escolhido."""
     exec_sql("""
         UPDATE fiscal_config SET
-            ambiente='Homologação',
+            ambiente=COALESCE(NULLIF(ambiente,''), :ambiente),
             uf=COALESCE(NULLIF(uf,''), :uf),
             certificado_path=COALESCE(NULLIF(certificado_path,''), :certificado_path),
             certificado_senha_env=COALESCE(NULLIF(certificado_senha_env,''), :certificado_senha_env),
@@ -1093,14 +1322,14 @@ def fiscal_preencher_padrao():
             observacao=COALESCE(NULLIF(observacao,''), :observacao)
         WHERE id=1
     """, FISCAL_DEFAULTS)
-    backup_db("fiscal-padrao-homologacao")
-    flash("Preenchi os dados fiscais recebidos e mantive em Homologação para teste.", "ok")
+    backup_db("fiscal-padrao")
+    flash("Preenchi os dados fiscais base sem alterar o ambiente atual.", "ok")
     return redirect(url_for("fiscal"))
 
 @app.route("/fiscal/aplicar-fixos", methods=["POST"])
 @login_required
 def fiscal_aplicar_fixos():
-    """Força os dados fiscais base já recebidos: empresa, séries, CSC/Token e padrões de homologação."""
+    """Força os dados fiscais base já recebidos: empresa, séries, CSC/Token e padrões."""
     exec_sql("""
         UPDATE fiscal_config SET
             razao_social=:razao_social,
@@ -1137,7 +1366,7 @@ def fiscal_aplicar_fixos():
 @login_required
 def fiscal_preencher_documentos():
     """Preenche dados cadastrais da empresa com base nos documentos oficiais enviados.
-    Mantém emissão em homologação e não mexe em CSC/Token, séries ou regras fiscais.
+    Não altera ambiente, CSC/Token, séries ou regras fiscais.
     """
     exec_sql("""
         UPDATE fiscal_config SET
@@ -1152,12 +1381,12 @@ def fiscal_preencher_documentos():
             telefone='(31) 3875-1342',
             email='CONTABILIDADEREIS01@HOTMAIL.COM',
             regime='SIMPLES NACIONAL',
-            ambiente='Homologação',
-            observacao='Dados preenchidos pelos documentos enviados: CNPJ, inscrição estadual e contrato social. CNAE principal: 4683-4/00. Conferir CSC/Token, séries, CFOP/CST/CSOSN e impostos com a contabilidade antes de produção.'
+            logradouro='R MANOEL FRANCISCO DE CASTRO', numero='21', complemento='B', bairro='CENTRO', codigo_municipio='3145877', cnae='4683400', crt=1,
+            observacao='Dados cadastrais preenchidos pelos documentos enviados. Emissão NF-e direta pela SEFAZ/MG.'
         WHERE id=1
     """)
     backup_db("fiscal-dados-documentos")
-    flash("Dados cadastrais preenchidos pelos documentos enviados. Mantive em Homologação por segurança.", "ok")
+    flash("Dados cadastrais da CENTRALVET restaurados sem alterar o ambiente fiscal.", "ok")
     return redirect(url_for("fiscal"))
 
 @app.route("/fiscal/certificado", methods=["GET", "POST"])
@@ -1393,7 +1622,8 @@ def nova_devolucao():
             "substituicao_sugerida": substituicao_sugerida, "status_st_geral": status_st_geral,
             "total_com_st": total_com_st, "total_sem_st": total_sem_st,
         }
-    return render_template("devolucao_form.html", preview=preview, encoded_xml=encoded_xml, hoje=today_str(), empresa_uf=os.environ.get("UF_EMPRESA", "MG"))
+    cfg = fetch_one("SELECT * FROM fiscal_config WHERE id=1")
+    return render_template("devolucao_form.html", preview=preview, encoded_xml=encoded_xml, hoje=today_str(), empresa_uf=os.environ.get("UF_EMPRESA", "MG"), cfg=cfg, producao=fiscal_tpamb(cfg)==1)
 
 @app.route("/devolucoes/salvar", methods=["POST"])
 @login_required
@@ -1408,7 +1638,37 @@ def salvar_devolucao():
     except Exception as e:
         flash(f"Não consegui recuperar os dados do XML. Tente importar novamente. Detalhe: {e}", "erro")
         return redirect(url_for("nova_devolucao"))
+    cfg_atual = fetch_one("SELECT * FROM fiscal_config WHERE id=1")
+    # Evita duas NF-e diferentes disputando a mesma numeração.
+    proximo_nnf = only_digits(cfg_val(cfg_atual, "nf_numero_inicial") or "1") or "1"
+    pendente_numero = fetch_one("""
+        SELECT id, status, sefaz_cstat, sefaz_motivo FROM devolucoes
+        WHERE nf_devolucao_numero=? AND status!='Autorizada SEFAZ'
+        ORDER BY id DESC LIMIT 1
+    """, (proximo_nnf,))
+    if pendente_numero:
+        flash(f"Existe uma NF-e de devolução #{pendente_numero['id']} pendente usando o próximo número {proximo_nnf}. Resolva ou exclua essa tentativa antes de criar outra.", "erro")
+        return redirect(url_for("ver_devolucao", devolucao_id=pendente_numero["id"]))
+
+    if fiscal_tpamb(cfg_atual) == 1:
+        empresa_doc = only_digits(cfg_val(cfg_atual, "cnpj"))
+        destinatario_doc = only_digits(dados.get("destinatario_cnpj"))
+        if not destinatario_doc or destinatario_doc != empresa_doc:
+            flash("Em PRODUÇÃO eu não vou emitir: o XML original não está destinado ao CNPJ da CENTRALVET. Use uma NF-e de compra emitida para a empresa.", "erro")
+            return redirect(url_for("nova_devolucao"))
+        if str(dados.get("modelo") or "55") != "55":
+            flash("Para esta devolução em produção, importe o XML de uma NF-e modelo 55.", "erro")
+            return redirect(url_for("nova_devolucao"))
+        if len(only_digits(dados.get("chave"))) != 44:
+            flash("A chave da NF-e original não tem 44 dígitos. Não vou enviar uma devolução inválida para a SEFAZ.", "erro")
+            return redirect(url_for("nova_devolucao"))
+
     xml_hash = hashlib.sha256(xml_bytes).hexdigest()
+    original_path = os.path.join(FISCAL_ORIGINAL_DIR, f"{xml_hash}.xml")
+    if not os.path.exists(original_path):
+        with open(original_path, "wb") as f:
+            f.write(xml_bytes)
+
     motivo = request.form.get("motivo") or "Devolução por avaria"
     baixar_estoque = request.form.get("baixar_estoque") == "1"
     cfop_devolucao_padrao = (request.form.get("cfop_devolucao_padrao") or "").strip()
@@ -1419,22 +1679,23 @@ def salvar_devolucao():
         cfop_devolucao_padrao = sugerir_cfop_devolucao(tipo_operacao_devolucao, modo_fallback)
     obs = request.form.get("observacao") or ""
     if substituicao_devolucao == "auto":
-        obs_info = f"Assistente CFOP automático: XML analisado por produto; operação {'outro estado' if tipo_operacao_devolucao == 'outro_estado' else 'mesmo estado'}; fallback {cfop_devolucao_padrao}."
+        obs_info = f"CFOP automático: XML analisado por produto; operação {'outro estado' if tipo_operacao_devolucao == 'outro_estado' else 'mesmo estado'}; fallback {cfop_devolucao_padrao}."
     else:
-        obs_info = f"Assistente CFOP: {'outro estado' if tipo_operacao_devolucao == 'outro_estado' else 'mesmo estado'} / {'com ST' if substituicao_devolucao == 'com_st' else 'sem ST'} / CFOP sugerido {cfop_devolucao_padrao}."
+        obs_info = f"CFOP: {'outro estado' if tipo_operacao_devolucao == 'outro_estado' else 'mesmo estado'} / {'com ST' if substituicao_devolucao == 'com_st' else 'sem ST'} / {cfop_devolucao_padrao}."
     obs = (obs + " | " + obs_info).strip(" |")
     selecionados = 0
     with get_db() as db:
         cur = db.execute("""
             INSERT INTO devolucoes
             (data, fornecedor_nome, fornecedor_cnpj, destinatario_nome, destinatario_cnpj, chave_origem, numero_origem,
-             serie_origem, emissao_origem, total_original, motivo, status, baixou_estoque, xml_hash, observacao)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             serie_origem, emissao_origem, total_original, motivo, status, baixou_estoque, baixar_estoque_solicitado,
+             xml_hash, xml_original_path, observacao)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)
         """, (
             request.form.get("data") or today_str(), dados.get("fornecedor_nome"), dados.get("fornecedor_cnpj"),
             dados.get("destinatario_nome"), dados.get("destinatario_cnpj"), dados.get("chave"), dados.get("numero"),
-            dados.get("serie"), dados.get("emissao"), dados.get("total"), motivo, "Gerada", 1 if baixar_estoque else 0,
-            xml_hash, obs
+            dados.get("serie"), dados.get("emissao"), dados.get("total"), motivo, "Aguardando autorização SEFAZ",
+            1 if baixar_estoque else 0, xml_hash, original_path, obs
         ))
         devolucao_id = cur.lastrowid
         for idx, item in enumerate(dados["itens"], start=1):
@@ -1456,20 +1717,13 @@ def salvar_devolucao():
             valor_total = qtd_dev * valor_unit
             db.execute("""
                 INSERT INTO devolucao_itens
-                (devolucao_id, produto_id, codigo, ean, nome, ncm, cest, cfop_original, cfop_devolucao, cst_csosn,
+                (devolucao_id, produto_id, item_origem_idx, codigo, ean, nome, ncm, cest, cfop_original, cfop_devolucao, cst_csosn,
                  unidade, quantidade_original, quantidade_devolver, valor_unitario, valor_total)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (devolucao_id, produto_id, item.get("codigo"), item.get("ean"), item.get("nome"), item.get("ncm"),
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (devolucao_id, produto_id, int(item.get("item_origem_idx") or idx), item.get("codigo"), item.get("ean"), item.get("nome"), item.get("ncm"),
                   item.get("cest"), item.get("cfop"), cfop_dev, item.get("cst_csosn"), item.get("unidade"), qtd_original,
                   qtd_dev, valor_unit, valor_total))
             selecionados += 1
-            if baixar_estoque and produto_id:
-                db.execute("UPDATE produtos SET estoque=estoque-? WHERE id=?", (qtd_dev, produto_id))
-                db.execute("""
-                    INSERT INTO estoque_mov (data, produto_id, tipo, quantidade, custo_unit, valor_total, origem, observacao)
-                    VALUES (?, ?, 'Saída', ?, ?, ?, ?, ?)
-                """, (request.form.get("data") or today_str(), produto_id, qtd_dev, valor_unit, valor_total,
-                      f"DEVOLUCAO #{devolucao_id}", f"Saída por devolução. NF origem {dados.get('numero') or ''}. Chave {dados.get('chave') or ''}"))
         if selecionados <= 0:
             db.execute("DELETE FROM devolucoes WHERE id=?", (devolucao_id,))
             db.commit()
@@ -1477,8 +1731,14 @@ def salvar_devolucao():
             return redirect(url_for("nova_devolucao"))
         db.commit()
     backup_db("devolucao-criada")
-    flash("Devolução gerada. A tela de impressão foi aberta automaticamente.", "ok")
-    return redirect(url_for("ver_devolucao", devolucao_id=devolucao_id, imprimir=1))
+    result = emitir_devolucao_sefaz_internal(devolucao_id)
+    if result.get("authorized"):
+        flash(f"NF-e autorizada pela SEFAZ ✅ cStat {result.get('cStat')} - {result.get('xMotivo') or 'Autorizada'}", "ok")
+        return redirect(url_for("danfe_devolucao", devolucao_id=devolucao_id))
+    motivo_erro = result.get("xMotivo") or result.get("error") or "Falha na autorização"
+    cstat = result.get("cStat") or "-"
+    flash(f"NF-e não autorizada pela SEFAZ. cStat {cstat}: {motivo_erro}", "erro")
+    return redirect(url_for("ver_devolucao", devolucao_id=devolucao_id))
 
 @app.route("/devolucoes/<int:devolucao_id>")
 @login_required
@@ -1491,6 +1751,48 @@ def ver_devolucao(devolucao_id):
     total = sum(float(i["valor_total"] or 0) for i in itens)
     return render_template("devolucao_detalhe.html", dev=dev, itens=itens, total=total)
 
+@app.route("/devolucoes/<int:devolucao_id>/emitir-sefaz", methods=["POST"])
+@login_required
+def emitir_devolucao_sefaz(devolucao_id):
+    dev_atual = fetch_one("SELECT * FROM devolucoes WHERE id=?", (devolucao_id,))
+    if dev_atual and dev_atual["status"] == "Rejeitada SEFAZ":
+        exec_sql("UPDATE devolucoes SET emissao_tentativa_em=NULL WHERE id=?", (devolucao_id,))
+    result = emitir_devolucao_sefaz_internal(devolucao_id)
+    if result.get("authorized"):
+        flash(f"NF-e autorizada pela SEFAZ ✅ cStat {result.get('cStat')} - {result.get('xMotivo') or 'Autorizada'}", "ok")
+        return redirect(url_for("danfe_devolucao", devolucao_id=devolucao_id))
+    flash(f"NF-e não autorizada. cStat {result.get('cStat') or '-'}: {result.get('xMotivo') or result.get('error') or 'Falha desconhecida'}", "erro")
+    return redirect(url_for("ver_devolucao", devolucao_id=devolucao_id))
+
+
+@app.route("/devolucoes/<int:devolucao_id>/danfe")
+@login_required
+def danfe_devolucao(devolucao_id):
+    dev = fetch_one("SELECT * FROM devolucoes WHERE id=?", (devolucao_id,))
+    if not dev or dev["status"] != "Autorizada SEFAZ":
+        flash("O DANFE oficial só fica disponível depois que a SEFAZ autorizar a NF-e.", "erro")
+        return redirect(url_for("ver_devolucao", devolucao_id=devolucao_id))
+    path = fiscal_safe_file(dev["danfe_path"])
+    if not path:
+        flash("Arquivo DANFE não encontrado no armazenamento fiscal.", "erro")
+        return redirect(url_for("ver_devolucao", devolucao_id=devolucao_id))
+    return send_file(path, mimetype="application/pdf", as_attachment=False, download_name=f"DANFE-NFe-{dev['nf_devolucao_numero'] or devolucao_id}.pdf")
+
+
+@app.route("/devolucoes/<int:devolucao_id>/xml")
+@login_required
+def xml_devolucao(devolucao_id):
+    dev = fetch_one("SELECT * FROM devolucoes WHERE id=?", (devolucao_id,))
+    if not dev or dev["status"] != "Autorizada SEFAZ":
+        flash("O XML autorizado só fica disponível depois da autorização da SEFAZ.", "erro")
+        return redirect(url_for("ver_devolucao", devolucao_id=devolucao_id))
+    path = fiscal_safe_file(dev["xml_autorizado_path"])
+    if not path:
+        flash("XML autorizado não encontrado no armazenamento fiscal.", "erro")
+        return redirect(url_for("ver_devolucao", devolucao_id=devolucao_id))
+    return send_file(path, mimetype="application/xml", as_attachment=True, download_name=f"NFe-{dev['nf_devolucao_chave'] or devolucao_id}.xml")
+
+
 @app.route("/devolucoes/<int:devolucao_id>/excluir", methods=["POST"])
 @login_required
 def excluir_devolucao(devolucao_id):
@@ -1498,6 +1800,12 @@ def excluir_devolucao(devolucao_id):
     if not dev:
         flash("Devolução não encontrada.", "erro")
         return redirect(url_for("devolucoes"))
+    if dev["status"] == "Autorizada SEFAZ":
+        flash("NF-e autorizada não pode ser excluída. Para desfazer uma nota autorizada é necessário usar o evento fiscal adequado (ex.: cancelamento, quando permitido).", "erro")
+        return redirect(url_for("ver_devolucao", devolucao_id=devolucao_id))
+    if dev["status"] == "Falha na comunicação" and dev["nf_devolucao_numero"]:
+        flash("Não vou excluir esta tentativa enquanto o resultado estiver incerto. Tente autorizar novamente para o sistema consultar/recuperar a situação da mesma NF-e.", "erro")
+        return redirect(url_for("ver_devolucao", devolucao_id=devolucao_id))
     with get_db() as db:
         if dev["baixou_estoque"]:
             itens = db.execute("SELECT * FROM devolucao_itens WHERE devolucao_id=?", (devolucao_id,)).fetchall()

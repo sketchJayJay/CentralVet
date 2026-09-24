@@ -2,17 +2,20 @@
 {% block content %}
 <section class="hero">
   <span class="badge">Fiscal</span><h1>Configuração fiscal NF-e / NFC-e</h1>
-  <p>Dados da CENTRALVET, certificado A1, séries, CSC/Token e preparação para homologação.</p>
+  <p>Emissão fiscal integrada diretamente aos Web Services da SEFAZ/MG, sem API mensal de terceiros.</p>
   <div class="actions">
     <a class="btn green" href="{{ url_for('importar_xml') }}">Importar XML de compra</a>
     <a class="btn" href="{{ url_for('nova_devolucao') }}">Nota de devolução</a>
     <a class="btn secondary" href="{{ url_for('devolucoes') }}">Ver devoluções</a>
     <a class="btn secondary" href="{{ url_for('enviar_certificado') }}">Enviar certificado A1</a>
-    <form method="post" action="{{ url_for('fiscal_preencher_documentos') }}" style="display:inline" onsubmit="return confirm('Preencher dados da empresa com base nos documentos enviados? Isso mantém o sistema em Homologação.')">
+    <form method="post" action="{{ url_for('fiscal_testar_sefaz') }}" style="display:inline">
+      <button type="submit" class="green">Testar conexão SEFAZ</button>
+    </form>
+    <form method="post" action="{{ url_for('fiscal_preencher_documentos') }}" style="display:inline" onsubmit="return confirm('Restaurar os dados cadastrais da CENTRALVET? O ambiente atual será mantido.')">
       <button type="submit" class="secondary">Preencher dados da empresa</button>
     </form>
-    <form method="post" action="{{ url_for('fiscal_preencher_padrao') }}" style="display:inline" onsubmit="return confirm('Preencher campos provisórios para homologação? Produção continuará bloqueada até validar com a contabilidade.')">
-      <button type="submit" class="warn">Preencher básico p/ teste</button>
+    <form method="post" action="{{ url_for('fiscal_preencher_padrao') }}" style="display:inline" onsubmit="return confirm('Restaurar os campos fiscais base sem alterar o ambiente atual?')">
+      <button type="submit" class="warn">Restaurar campos base</button>
     </form>
     <form method="post" action="{{ url_for('fiscal_aplicar_fixos') }}" style="display:inline" onsubmit="return confirm('Restaurar todos os dados fiscais recebidos, incluindo séries e CSC/Token?')">
       <button type="submit" class="green">Restaurar dados fiscais fixos</button>
@@ -21,7 +24,7 @@
 </section>
 
 <div class="grid">
-  <div class="card metric"><div class="label">Ambiente</div><div class="value">{{ cfg.ambiente or 'Homologação' }}</div></div>
+  <div class="card metric"><div class="label">Ambiente</div><div class="value">{{ cfg.ambiente or 'Produção' }}</div></div>
   <div class="card metric"><div class="label">Certificado no servidor</div><div class="value {{ 'green' if cert_status.exists else 'warn' }}">{{ 'Encontrado' if cert_status.exists else 'Pendente' }}</div></div>
   <div class="card metric"><div class="label">Senha no Coolify</div><div class="value {{ 'green' if cert_status.has_password else 'warn' }}">{{ 'OK' if cert_status.has_password else 'Falta' }}</div></div>
   <div class="card metric"><div class="label">XMLs importados</div><div class="value green">{{ xmls|length }}</div></div>
@@ -31,11 +34,11 @@
   <div class="card {{ 'dark' if not prod_ready else '' }}">
     <h2>Status da liberação fiscal</h2>
     {% if prod_ready %}
-      <p><span class="pill green">Pronto para configurar produção</span></p>
-      <p>Os dados principais estão preenchidos. Faça uma última conferência antes de emitir nota real.</p>
+      <p><span class="pill green">Integração direta pronta para teste</span></p>
+      <p>Os dados principais estão preenchidos. Use “Testar conexão SEFAZ” antes da primeira NF-e real.</p>
     {% else %}
-      <p><span class="pill warn">Homologação liberada / Produção travada</span></p>
-      <p style="color:{{ '#b9d7ee' if not prod_ready else '#536b7f' }}">Dá para testar e preparar documentos, mas a produção só deve ser usada depois de preencher os dados reais da contabilidade.</p>
+      <p><span class="pill warn">Configuração fiscal incompleta</span></p>
+      <p style="color:#b9d7ee">Complete certificado, senha, séries e dados fiscais antes de enviar uma NF-e real.</p>
     {% endif %}
   </div>
   <div class="card">
@@ -53,19 +56,21 @@
 </div>
 
 <div class="card dark">
-  <h2>Como guardar o certificado com segurança</h2>
+  <h2>Motor fiscal direto SEFAZ/MG</h2>
+  <p style="color:#b9d7ee">O sistema gera a NF-e modelo 55, assina com o certificado A1, envia direto à SEFAZ, guarda XML autorizado e gera o DANFE oficial. Sem Focus/Nuvem Fiscal.</p>
+  <h3>Como guardar o certificado com segurança</h3>
   <p style="color:#b9d7ee;margin-top:0">Não coloque o certificado nem a senha dentro do ZIP do sistema. O arquivo fica em uma pasta privada do servidor e a senha fica nas variáveis do Coolify.</p>
   <div class="row">
     <div><label>Variável CERTIFICADO_PATH</label><input readonly value="{{ envs.CERTIFICADO_PATH or cfg.certificado_path or '/app/certs/centralvet_a1.pfx' }}"></div>
     <div><label>Variável CERTIFICADO_SENHA</label><input readonly value="{{ envs.CERTIFICADO_SENHA }}"></div>
-    <div><label>AMBIENTE_FISCAL</label><input readonly value="{{ envs.AMBIENTE_FISCAL }}"></div>
+    <div><label>Ambiente usado pelo motor fiscal</label><input readonly value="{{ cfg.ambiente or 'Produção' }}"></div>
     <div><label>UF_EMPRESA</label><input readonly value="{{ envs.UF_EMPRESA }}"></div>
   </div>
 </div>
 
 <div class="card">
 <h2>Dados da empresa</h2>
-<p style="color:#536b7f;margin-top:-6px">Os dados principais já foram deixados com base nos documentos enviados. Use “Preencher dados da empresa” para restaurar os dados oficiais, se precisar. O botão “Preencher básico p/ teste” completa apenas campos provisórios de homologação.</p>
+<p style="color:#536b7f;margin-top:-6px">Os dados principais já foram deixados com base nos documentos enviados. Use “Preencher dados da empresa” para restaurar os dados oficiais, se precisar. O botão “Restaurar campos base” recupera séries, CSC/Token e padrões já cadastrados sem mudar o ambiente atual.</p>
 <form method="post">
   <div class="row">
     <div><label>Razão social</label><input name="razao_social" value="{{cfg.razao_social or ''}}"></div>
@@ -79,7 +84,7 @@
     <div><label>Telefone</label><input name="telefone" value="{{cfg.telefone or ''}}"></div>
     <div><label>E-mail</label><input name="email" value="{{cfg.email or ''}}"></div>
     <div><label>Regime tributário</label><input name="regime" value="{{cfg.regime or ''}}" placeholder="Ex.: Simples Nacional"></div>
-    <div><label>Ambiente</label><select name="ambiente"><option {{'selected' if cfg.ambiente=='Homologação' else ''}}>Homologação</option><option {{'selected' if cfg.ambiente=='Produção' else ''}}>Produção</option></select></div>
+    <div><label>Ambiente</label><select name="ambiente"><option {{'selected' if cfg.ambiente=='Homologação' else ''}}>Homologação</option><option {{'selected' if cfg.ambiente=='Produção' else ''}}>Produção</option></select><small>Produção envia notas reais para a SEFAZ.</small></div>
   </div>
 
   <h2 style="margin-top:20px">Certificado e numeração</h2>
@@ -98,7 +103,7 @@
     <div><label>Observação fiscal</label><input name="observacao" value="{{cfg.observacao or ''}}"></div>
   </div>
   <button class="green">Salvar configuração fiscal</button>
-  <p style="font-size:13px;color:#536b7f;margin-top:12px">Observação: se tentar salvar como Produção faltando CSC/Token, séries ou regras fiscais, o sistema mantém em Homologação para evitar emissão real errada.</p>
+  <p style="font-size:13px;color:#536b7f;margin-top:12px">A numeração NF-e é tratada como “próximo número”. Depois de uma autorização, o sistema avança automaticamente. Em rejeição, mantém a mesma numeração para correção e reenvio.</p>
 </form>
 </div>
 
@@ -111,7 +116,7 @@
     </tbody></table></div>
   </div>
   <div class="card">
-    <h2>Pré-notas / documentos preparados</h2>
+    <h2>Vendas / documentos preparados</h2>
     <div class="table-wrap"><table><thead><tr><th>Venda</th><th>Cliente</th><th>Tipo</th><th>Status</th><th>Total</th></tr></thead><tbody>
     {% for n in notas %}
     <tr><td>#{{n.id}}</td><td>{{n.cliente_nome}}</td><td>{{n.nf_tipo}}</td><td>{{n.nf_status}} {{n.nf_numero or ''}}</td><td>{{n.total|money}}</td></tr>
