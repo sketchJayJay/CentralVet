@@ -1,26 +1,42 @@
-
 {% extends "base.html" %}
 {% block content %}
 <section class="hero">
   <span class="badge">Venda rápida</span>
   <h1>Nova venda</h1>
-  <p>Escolha os produtos, o sistema calcula total, baixa estoque, lança no financeiro e prepara NF-e/NFC-e.</p>
+  <p>Busque cliente e produtos pelo nome. O sistema calcula total, baixa estoque, lança no financeiro e prepara NF-e/NFC-e.</p>
 </section>
-<form method="post" class="card" id="saleForm">
+<form method="post" class="card" id="saleForm" onsubmit="return validarVendaBusca()">
   <h2>Dados da venda</h2>
   <div class="row">
     <div><label>Data</label><input type="date" name="data" value="{{ hoje }}"></div>
-    <div><label>Cliente cadastrado</label>
-      <select name="cliente_id"><option value="">Consumidor / cliente rápido</option>{% for c in clientes %}<option value="{{c.id}}">{{c.nome}}</option>{% endfor %}</select>
+    <div>
+      <label>Buscar cliente</label>
+      <input id="clienteBusca" type="text" list="clientesLista" placeholder="Digite o nome do cliente..." autocomplete="off" oninput="selecionarCliente(this)">
+      <input type="hidden" name="cliente_id" id="clienteId" value="">
+      <datalist id="clientesLista">
+        {% for c in clientes %}
+        <option value="{{ c.nome }}{% if c.telefone %} — {{ c.telefone }}{% endif %}" data-id="{{ c.id }}" data-nome="{{ c.nome }}"></option>
+        {% endfor %}
+      </datalist>
+      <small class="search-hint">Digite parte do nome e escolha o cliente na lista.</small>
     </div>
-    <div><label>Nome rápido do cliente</label><input name="cliente_nome" placeholder="Opcional"></div>
+    <div><label>Cliente avulso</label><input name="cliente_nome" id="clienteNomeRapido" placeholder="Se não for cadastrado"></div>
     <div><label>Status</label><select name="status"><option>Pago</option><option>Pendente</option></select></div>
     <div><label>Forma pagamento</label><select name="forma_pagamento"><option>Dinheiro</option><option>Pix</option><option>Cartão débito</option><option>Cartão crédito</option><option>Crediário</option><option>Boleto</option></select></div>
     <div><label>Tipo fiscal</label><select name="nf_tipo"><option>NFC-e</option><option>NF-e</option><option>Sem nota agora</option></select></div>
     <div><label>Desconto</label><input name="desconto" id="desconto" value="0" oninput="calcTotal()"></div>
     <div><label>Observação</label><input name="observacao"></div>
   </div>
+
+  <datalist id="produtosBusca">
+    {% for p in produtos %}
+    <option value="{{ p.nome }}{% if p.codigo %} — {{ p.codigo }}{% endif %} • estoque {{ p.estoque|num }} {{ p.unidade }}"
+            data-id="{{ p.id }}" data-price="{{ p.preco_venda }}" data-stock="{{ p.estoque }}" data-cost="{{ p.preco_custo }}" data-nome="{{ p.nome }}"></option>
+    {% endfor %}
+  </datalist>
+
   <h2 style="margin-top:20px">Produtos da venda</h2>
+  <p class="search-hint">Digite o nome, código ou parte do produto e escolha uma opção.</p>
   <div id="items"></div>
   <button type="button" class="secondary" onclick="addItem()">+ Adicionar produto</button>
   <div class="card dark" style="margin-top:16px">
@@ -33,30 +49,50 @@
 
 <template id="tpl">
   <div class="item-row">
-    <div><label>Produto</label><select name="produto_id[]" onchange="fillPrice(this); calcTotal()" required>
-      <option value="">Selecione</option>
-      {% for p in produtos %}
-      <option value="{{p.id}}" data-price="{{p.preco_venda}}" data-stock="{{p.estoque}}" data-cost="{{p.preco_custo}}">{{p.nome}} — estoque {{p.estoque|num}} {{p.unidade}}</option>
-      {% endfor %}
-    </select></div>
-    <div><label>Qtd</label><input name="quantidade[]" value="1" oninput="calcTotal()"></div>
-    <div><label>Preço unit.</label><input name="preco_unit[]" oninput="calcTotal()"></div>
+    <div>
+      <label>Buscar produto</label>
+      <input type="text" class="produto-busca" list="produtosBusca" placeholder="Digite o nome do produto..." autocomplete="off" oninput="selecionarProduto(this)" required>
+      <input type="hidden" name="produto_id[]" class="produto-id" value="">
+      <small class="produto-info search-hint"></small>
+    </div>
+    <div><label>Qtd</label><input name="quantidade[]" value="1" inputmode="decimal" oninput="calcTotal()"></div>
+    <div><label>Preço unit.</label><input name="preco_unit[]" inputmode="decimal" oninput="calcTotal()"></div>
     <button type="button" class="danger" onclick="this.closest('.item-row').remove();calcTotal()">Remover</button>
   </div>
 </template>
 {% endblock %}
 {% block scripts %}
 <script>
+function encontrarOpcao(listaId, valor){
+  const opts = document.getElementById(listaId).options;
+  for(const opt of opts){ if(opt.value === valor) return opt; }
+  return null;
+}
+function selecionarCliente(input){
+  const opt = encontrarOpcao('clientesLista', input.value);
+  document.getElementById('clienteId').value = opt ? (opt.dataset.id || '') : '';
+  if(opt){ document.getElementById('clienteNomeRapido').value = ''; }
+}
+function selecionarProduto(input){
+  const opt = encontrarOpcao('produtosBusca', input.value);
+  const row = input.closest('.item-row');
+  const hidden = row.querySelector('.produto-id');
+  const info = row.querySelector('.produto-info');
+  hidden.value = opt ? (opt.dataset.id || '') : '';
+  if(opt){
+    const preco = row.querySelector('[name="preco_unit[]"]');
+    if(preco && opt.dataset.price !== undefined){ preco.value = String(opt.dataset.price || 0).replace('.',','); }
+    info.textContent = 'Estoque disponível: ' + num(opt.dataset.stock || 0);
+  } else {
+    info.textContent = input.value ? 'Escolha o produto na lista sugerida.' : '';
+  }
+  calcTotal();
+}
 function addItem(){
   const html = document.getElementById('tpl').innerHTML;
   const div = document.createElement('div');
   div.innerHTML = html;
   document.getElementById('items').appendChild(div.firstElementChild);
-}
-function fillPrice(sel){
-  const opt = sel.selectedOptions[0];
-  const row = sel.closest('.item-row');
-  if(opt && opt.dataset.price){ row.querySelector('[name="preco_unit[]"]').value = String(opt.dataset.price).replace('.',','); }
 }
 function calcTotal(){
   let subtotal=0;
@@ -68,6 +104,33 @@ function calcTotal(){
   subtotal -= parseBR(document.getElementById('desconto').value);
   document.getElementById('totalView').innerText = moeda(Math.max(0, subtotal));
 }
+function validarVendaBusca(){
+  let ok = true;
+  document.querySelectorAll('.item-row').forEach(row=>{
+    const busca = row.querySelector('.produto-busca');
+    const id = row.querySelector('.produto-id');
+    if(!id.value){
+      ok = false;
+      busca.focus();
+      busca.setCustomValidity('Escolha um produto da lista de resultados.');
+      busca.reportValidity();
+    } else {
+      busca.setCustomValidity('');
+    }
+  });
+  if(!ok) return false;
+
+  const clienteBusca = document.getElementById('clienteBusca');
+  const clienteId = document.getElementById('clienteId');
+  const clienteRapido = document.getElementById('clienteNomeRapido');
+  if(clienteBusca.value.trim() && !clienteId.value && !clienteRapido.value.trim()){
+    clienteRapido.value = clienteBusca.value.trim();
+  }
+  return true;
+}
+document.addEventListener('input', function(e){
+  if(e.target.classList && e.target.classList.contains('produto-busca')) e.target.setCustomValidity('');
+});
 addItem();
 </script>
 {% endblock %}

@@ -1,13 +1,22 @@
-
 {% extends "base.html" %}
 {% block content %}
 <section class="hero"><span class="badge">Estoque</span><h1>Entrada e saída de mercadorias</h1><p>Movimente estoque manualmente ou importe o XML da nota de compra para fazer isso automático.</p><div class="actions"><a class="btn green" href="{{ url_for('importar_xml') }}">Importar XML da nota</a></div></section>
 <div class="card">
   <h2>Nova movimentação</h2>
-  <form method="post">
+  <form method="post" id="stockForm" onsubmit="return validarProdutoEstoque()">
     <div class="row">
       <div><label>Data</label><input type="date" name="data" value="{{ hoje }}"></div>
-      <div><label>Produto</label><select name="produto_id" required>{% for p in produtos %}<option value="{{p.id}}">{{p.nome}} — estoque {{p.estoque|num}}</option>{% endfor %}</select></div>
+      <div>
+        <label>Buscar produto</label>
+        <input id="produtoEstoqueBusca" type="text" list="produtosEstoqueLista" placeholder="Digite o nome do produto..." autocomplete="off" oninput="selecionarProdutoEstoque(this)" required>
+        <input type="hidden" name="produto_id" id="produtoEstoqueId" value="">
+        <datalist id="produtosEstoqueLista">
+          {% for p in produtos %}
+          <option value="{{ p.nome }}{% if p.codigo %} — {{ p.codigo }}{% endif %} • estoque {{ p.estoque|num }} {{ p.unidade }}" data-id="{{ p.id }}"></option>
+          {% endfor %}
+        </datalist>
+        <small class="search-hint">Digite parte do nome e escolha o produto sugerido.</small>
+      </div>
       <div><label>Tipo</label><select name="tipo"><option>Entrada</option><option>Saída</option><option>Ajuste +</option><option>Ajuste -</option></select></div>
       <div><label>Quantidade</label><input name="quantidade" required></div>
       <div><label>Custo unitário</label><input name="custo_unit"></div>
@@ -25,4 +34,26 @@
 {% else %}<tr><td colspan="6">Sem movimentações.</td></tr>{% endfor %}
 </tbody></table></div>
 </div>
+{% endblock %}
+{% block scripts %}
+<script>
+function selecionarProdutoEstoque(input){
+  let achou = null;
+  for(const opt of document.getElementById('produtosEstoqueLista').options){
+    if(opt.value === input.value){ achou = opt; break; }
+  }
+  document.getElementById('produtoEstoqueId').value = achou ? (achou.dataset.id || '') : '';
+  input.setCustomValidity('');
+}
+function validarProdutoEstoque(){
+  const input = document.getElementById('produtoEstoqueBusca');
+  if(!document.getElementById('produtoEstoqueId').value){
+    input.setCustomValidity('Escolha um produto da lista de resultados.');
+    input.reportValidity();
+    return false;
+  }
+  input.setCustomValidity('');
+  return true;
+}
+</script>
 {% endblock %}

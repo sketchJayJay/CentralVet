@@ -144,3 +144,8 @@ body.installed-app-mode .layout{min-height:100vh;}
   .main{margin:0!important;width:100%!important;padding:0!important}
   .receipt{height:auto!important;min-height:0!important;margin:0!important;page-break-after:avoid!important;break-after:avoid-page!important}
 }
+
+/* Busca rápida em seletores grandes */
+.search-hint{display:block;margin-top:6px;color:#71879a;font-size:12px;line-height:1.35}
+.dark .search-hint{color:#9fb4c8}
+input[list]{background-image:linear-gradient(135deg,rgba(0,168,255,.04),rgba(32,208,131,.03))}
