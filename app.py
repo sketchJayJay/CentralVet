@@ -7,11 +7,15 @@ import base64
 import json
 import subprocess
 import xml.etree.ElementTree as ET
+from io import BytesIO
 from datetime import datetime, date
 from zoneinfo import ZoneInfo
 from functools import wraps
 from flask import Flask, render_template, request, redirect, url_for, flash, session, send_file, jsonify, send_from_directory, make_response
 from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
+from reportlab.pdfgen import canvas
+from reportlab.lib.units import mm
+from reportlab.pdfbase.pdfmetrics import stringWidth
 
 APP_NAME = "CENTRALVET Agropecuária"
 DATA_DIR = os.environ.get("DATA_DIR", os.path.join(os.path.dirname(__file__), "data"))
@@ -1540,16 +1544,181 @@ def recibo_venda(venda_id):
     itens = fetch_all("SELECT * FROM venda_itens WHERE venda_id=?", (venda_id,))
     return render_template("recibo_venda.html", venda=venda, itens=itens)
 
-@app.route("/vendas/<int:venda_id>/cupom")
+def _thermal_wrap(text, font_name, font_size, max_width):
+    text = str(text or "").strip()
+    if not text:
+        return [""]
+    words = text.split()
+    lines = []
+    current = ""
+    for word in words:
+        candidate = word if not current else current + " " + word
+        if stringWidth(candidate, font_name, font_size) <= max_width:
+            current = candidate
+            continue
+        if current:
+            lines.append(current)
+            current = ""
+        # Quebra palavras/códigos maiores que a largura do papel.
+        chunk = ""
+        for ch in word:
+            test = chunk + ch
+            if stringWidth(test, font_name, font_size) <= max_width:
+                chunk = test
+            else:
+                if chunk:
+                    lines.append(chunk)
+                chunk = ch
+        current = chunk
+    if current:
+        lines.append(current)
+    return lines or [""]
+
+def _thermal_money(value):
+    try:
+        value = float(value or 0)
+    except Exception:
+        value = 0.0
+    return "R$ " + f"{value:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+def _thermal_num(value):
+    try:
+        value = float(value or 0)
+    except Exception:
+        value = 0.0
+    if abs(value - round(value)) < 0.000001:
+        return str(int(round(value)))
+    return (f"{value:.3f}".rstrip("0").rstrip(".")).replace(".", ",")
+
+def _thermal_date(value):
+    raw = str(value or "")
+    try:
+        return datetime.strptime(raw[:10], "%Y-%m-%d").strftime("%d/%m/%Y")
+    except Exception:
+        return raw
+
+def build_pos58_pdf(venda, itens):
+    page_width = 58 * mm
+    margin_x = 4 * mm
+    usable = page_width - (2 * margin_x)
+    normal_font = "Helvetica"
+    bold_font = "Helvetica-Bold"
+
+    # Primeiro montamos uma lista de comandos para saber a altura exata do cupom.
+    rows = []
+    def add_text(text, size=8.2, bold=False, align="left", gap_after=1.4):
+        font = bold_font if bold else normal_font
+        for line in _thermal_wrap(text, font, size, usable):
+            rows.append(("text", line, size, font, align, size + 2.0))
+        if gap_after:
+            rows.append(("gap", gap_after))
+
+    def add_rule(gap=3.0):
+        rows.append(("rule", gap))
+
+    add_text("CENTRALVET AGROPECUARIA", size=11.5, bold=True, align="center", gap_after=1.5)
+    add_text(f"Venda #{venda['id']} - {_thermal_date(venda['data'])}", size=7.8, align="center", gap_after=2.0)
+    add_rule()
+    add_text(f"Cliente: {venda['cliente_nome'] or 'Consumidor'}", size=7.8, bold=True, gap_after=1.4)
+    if venda['nf_status'] and venda['nf_status'] != 'Não emitida':
+        fiscal = f"Fiscal: {venda['nf_status']} {venda['nf_numero'] or ''}".strip()
+        add_text(fiscal, size=7.2, gap_after=1.4)
+    add_rule()
+
+    for item in itens:
+        add_text(item['produto_nome'], size=7.8, bold=True, gap_after=0.5)
+        detail = f"{_thermal_num(item['quantidade'])} x {_thermal_money(item['preco_unit'])}"
+        total = _thermal_money(item['total'])
+        # Duas colunas simples, sem tabela HTML/driver.
+        rows.append(("columns", detail, total, 7.2, normal_font, 9.0))
+        rows.append(("gap", 1.3))
+
+    add_rule()
+    add_text(f"TOTAL: {_thermal_money(venda['total'])}", size=11.0, bold=True, align="right", gap_after=2.0)
+    add_text(f"Pagamento: {venda['forma_pagamento'] or '-'} - {venda['status'] or '-'}", size=7.6, gap_after=1.5)
+    if venda['observacao']:
+        add_text(f"Obs.: {venda['observacao']}", size=7.2, gap_after=1.5)
+    add_rule()
+    add_text("Obrigado pela preferencia.", size=8.0, bold=True, align="center", gap_after=1.5)
+    if not venda['nf_status'] or venda['nf_status'] != 'Autorizada SEFAZ':
+        add_text("Recibo sem valor fiscal quando nao houver documento fiscal autorizado.", size=6.3, align="center", gap_after=0)
+
+    top_bottom = 5 * mm
+    content_height = 0.0
+    for row in rows:
+        if row[0] == "text":
+            content_height += row[5]
+        elif row[0] == "columns":
+            content_height += row[5]
+        elif row[0] == "rule":
+            content_height += 6.0 + row[1]
+        elif row[0] == "gap":
+            content_height += row[1]
+    page_height = max(45 * mm, content_height + top_bottom)
+    # Segurança para vendas muito grandes: ainda é uma única página de bobina.
+    page_height = min(page_height, 1500 * mm)
+
+    out = BytesIO()
+    pdf = canvas.Canvas(out, pagesize=(page_width, page_height), pageCompression=1)
+    y = page_height - 3 * mm
+
+    for row in rows:
+        kind = row[0]
+        if kind == "gap":
+            y -= row[1]
+            continue
+        if kind == "rule":
+            y -= 2.0
+            pdf.setLineWidth(0.35)
+            pdf.line(margin_x, y, page_width - margin_x, y)
+            y -= (4.0 + row[1])
+            continue
+        if kind == "columns":
+            _, left, right, size, font, line_h = row
+            pdf.setFont(font, size)
+            pdf.drawString(margin_x, y, left)
+            pdf.drawRightString(page_width - margin_x, y, right)
+            y -= line_h
+            continue
+        _, text, size, font, align, line_h = row
+        pdf.setFont(font, size)
+        if align == "center":
+            pdf.drawCentredString(page_width / 2, y, text)
+        elif align == "right":
+            pdf.drawRightString(page_width - margin_x, y, text)
+        else:
+            pdf.drawString(margin_x, y, text)
+        y -= line_h
+
+    pdf.showPage()
+    pdf.save()
+    out.seek(0)
+    return out
+
+@app.route("/vendas/<int:venda_id>/cupom.pdf")
 @login_required
-def cupom_termico(venda_id):
+def cupom_termico_pdf(venda_id):
     venda = fetch_one("SELECT * FROM vendas WHERE id=?", (venda_id,))
     if not venda:
         flash("Venda não encontrada.", "erro")
         return redirect(url_for("vendas"))
     itens = fetch_all("SELECT * FROM venda_itens WHERE venda_id=? ORDER BY id", (venda_id,))
-    auto = request.args.get("auto") == "1"
-    return render_template("cupom_termico.html", venda=venda, itens=itens, auto=auto)
+    pdf = build_pos58_pdf(venda, itens)
+    response = send_file(
+        pdf,
+        mimetype="application/pdf",
+        as_attachment=False,
+        download_name=f"cupom-venda-{venda_id}-pos58.pdf",
+    )
+    response.headers["Cache-Control"] = "no-store, max-age=0"
+    return response
+
+@app.route("/vendas/<int:venda_id>/cupom")
+@login_required
+def cupom_termico(venda_id):
+    # A impressao HTML variava conforme o tamanho de papel informado pelo driver POS-58.
+    # Agora o cupom abre como PDF com largura 58 mm e altura calculada pelo conteudo.
+    return redirect(url_for("cupom_termico_pdf", venda_id=venda_id))
 
 @app.route("/vendas/<int:venda_id>/fiscal", methods=["POST"])
 @login_required

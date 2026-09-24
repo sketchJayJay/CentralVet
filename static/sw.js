@@ -1,4 +1,4 @@
-const CACHE_NAME = 'centralvet-pos58-impressao-exata-v1';
+const CACHE_NAME = 'centralvet-pos58-pdf-exato-v2';
 const STATIC_ASSETS = [
   '/static/style.css',
   '/static/centralvet_logo.png',

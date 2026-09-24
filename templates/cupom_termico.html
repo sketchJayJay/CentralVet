@@ -89,7 +89,7 @@
 </head>
 <body>
 <div class="controls">
-  <button type="button" onclick="printReceipt()">Imprimir POS-58</button>
+  <a href="{{ url_for('cupom_termico_pdf', venda_id=venda.id) }}" target="_blank">Abrir PDF POS-58</a>
   <a href="{{ url_for('recibo_venda', venda_id=venda.id) }}">Voltar</a>
 </div>
 

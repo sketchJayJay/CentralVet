@@ -1,2 +1,1 @@
-Persistência reforçada contra redeploy.
-Correção POS-58: impressão térmica 58mm com altura dinâmica sem folha branca longa.
+CENTRALVET - POS-58 PDF altura exata - 2026-09-24
