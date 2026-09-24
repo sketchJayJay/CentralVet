@@ -1,4 +1,4 @@
-const CACHE_NAME = 'centralvet-pwa-v3-fix-relatorios-termica';
+const CACHE_NAME = 'centralvet-fiscal-limpo-v1';
 const STATIC_ASSETS = [
   '/static/style.css',
   '/static/centralvet_logo.png',

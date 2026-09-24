@@ -1,25 +1,13 @@
 {% extends "base.html" %}
 {% block content %}
-<section class="hero">
-  <span class="badge">Fiscal</span><h1>Configuração fiscal NF-e / NFC-e</h1>
-  <p>Emissão fiscal integrada diretamente aos Web Services da SEFAZ/MG, sem API mensal de terceiros.</p>
+<section class="hero fiscal-hero-clean">
+  <span class="badge">Fiscal</span>
+  <h1>Fiscal</h1>
+  <p>Compras, devoluções e documentos fiscais.</p>
   <div class="actions">
     <a class="btn green" href="{{ url_for('importar_xml') }}">Importar XML de compra</a>
     <a class="btn" href="{{ url_for('nova_devolucao') }}">Nota de devolução</a>
     <a class="btn secondary" href="{{ url_for('devolucoes') }}">Ver devoluções</a>
-    <a class="btn secondary" href="{{ url_for('enviar_certificado') }}">Enviar certificado A1</a>
-    <form method="post" action="{{ url_for('fiscal_testar_sefaz') }}" style="display:inline">
-      <button type="submit" class="green">Testar conexão SEFAZ</button>
-    </form>
-    <form method="post" action="{{ url_for('fiscal_preencher_documentos') }}" style="display:inline" onsubmit="return confirm('Restaurar os dados cadastrais da CENTRALVET? O ambiente atual será mantido.')">
-      <button type="submit" class="secondary">Preencher dados da empresa</button>
-    </form>
-    <form method="post" action="{{ url_for('fiscal_preencher_padrao') }}" style="display:inline" onsubmit="return confirm('Restaurar os campos fiscais base sem alterar o ambiente atual?')">
-      <button type="submit" class="warn">Restaurar campos base</button>
-    </form>
-    <form method="post" action="{{ url_for('fiscal_aplicar_fixos') }}" style="display:inline" onsubmit="return confirm('Restaurar todos os dados fiscais recebidos, incluindo séries e CSC/Token?')">
-      <button type="submit" class="green">Restaurar dados fiscais fixos</button>
-    </form>
   </div>
 </section>
 
@@ -35,7 +23,7 @@
     <h2>Status da liberação fiscal</h2>
     {% if prod_ready %}
       <p><span class="pill green">Integração direta pronta para teste</span></p>
-      <p>Os dados principais estão preenchidos. Use “Testar conexão SEFAZ” antes da primeira NF-e real.</p>
+      <p>Os dados principais estão preenchidos e o módulo fiscal está pronto para uso.</p>
     {% else %}
       <p><span class="pill warn">Configuração fiscal incompleta</span></p>
       <p style="color:#b9d7ee">Complete certificado, senha, séries e dados fiscais antes de enviar uma NF-e real.</p>
@@ -70,7 +58,7 @@
 
 <div class="card">
 <h2>Dados da empresa</h2>
-<p style="color:#536b7f;margin-top:-6px">Os dados principais já foram deixados com base nos documentos enviados. Use “Preencher dados da empresa” para restaurar os dados oficiais, se precisar. O botão “Restaurar campos base” recupera séries, CSC/Token e padrões já cadastrados sem mudar o ambiente atual.</p>
+<p style="color:#536b7f;margin-top:-6px">Os dados fiscais da empresa ficam salvos nesta configuração.</p>
 <form method="post">
   <div class="row">
     <div><label>Razão social</label><input name="razao_social" value="{{cfg.razao_social or ''}}"></div>
