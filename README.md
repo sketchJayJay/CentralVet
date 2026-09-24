@@ -85,3 +85,10 @@ O sistema automatiza a emissão e expõe a rejeição real da SEFAZ. Regras trib
 
 ## Correção de compatibilidade sped-nfe 5.2.8
 A montagem do XML usa `Make::getXML()`. A chamada antiga `Make::monta()` foi removida porque não existe na versão instalada pelo Composer.
+
+
+## Compartilhamento por WhatsApp
+- Após a NF-e ser autorizada, a tela mostra **Imprimir DANFE** e **Enviar DANFE pelo WhatsApp**.
+- Em navegadores compatíveis com Web Share, o sistema tenta compartilhar o PDF do DANFE como arquivo.
+- Como fallback, abre o WhatsApp com mensagem pronta e link assinado do DANFE.
+- O link público do DANFE expira em 7 dias e só funciona para notas autorizadas pela SEFAZ.

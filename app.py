@@ -11,6 +11,7 @@ from datetime import datetime, date
 from zoneinfo import ZoneInfo
 from functools import wraps
 from flask import Flask, render_template, request, redirect, url_for, flash, session, send_file, jsonify, send_from_directory, make_response
+from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 
 APP_NAME = "CENTRALVET Agropecuária"
 DATA_DIR = os.environ.get("DATA_DIR", os.path.join(os.path.dirname(__file__), "data"))
@@ -138,6 +139,12 @@ def fmt_num(v):
 app.jinja_env.filters["money"] = fmt_money
 app.jinja_env.filters["num"] = fmt_num
 app.jinja_env.filters["brdate"] = br_date
+
+def danfe_share_serializer():
+    return URLSafeTimedSerializer(app.secret_key, salt="centralvet-danfe-whatsapp")
+
+def make_danfe_share_token(devolucao_id):
+    return danfe_share_serializer().dumps({"devolucao_id": int(devolucao_id)})
 
 def login_required(fn):
     @wraps(fn)
@@ -1734,7 +1741,7 @@ def salvar_devolucao():
     result = emitir_devolucao_sefaz_internal(devolucao_id)
     if result.get("authorized"):
         flash(f"NF-e autorizada pela SEFAZ ✅ cStat {result.get('cStat')} - {result.get('xMotivo') or 'Autorizada'}", "ok")
-        return redirect(url_for("danfe_devolucao", devolucao_id=devolucao_id))
+        return redirect(url_for("ver_devolucao", devolucao_id=devolucao_id, emitida=1))
     motivo_erro = result.get("xMotivo") or result.get("error") or "Falha na autorização"
     cstat = result.get("cStat")
     if cstat:
@@ -1752,7 +1759,8 @@ def ver_devolucao(devolucao_id):
         return redirect(url_for("devolucoes"))
     itens = fetch_all("SELECT * FROM devolucao_itens WHERE devolucao_id=? ORDER BY id", (devolucao_id,))
     total = sum(float(i["valor_total"] or 0) for i in itens)
-    return render_template("devolucao_detalhe.html", dev=dev, itens=itens, total=total)
+    share_token = make_danfe_share_token(devolucao_id) if dev["status"] == "Autorizada SEFAZ" else None
+    return render_template("devolucao_detalhe.html", dev=dev, itens=itens, total=total, share_token=share_token)
 
 @app.route("/devolucoes/<int:devolucao_id>/emitir-sefaz", methods=["POST"])
 @login_required
@@ -1763,13 +1771,29 @@ def emitir_devolucao_sefaz(devolucao_id):
     result = emitir_devolucao_sefaz_internal(devolucao_id)
     if result.get("authorized"):
         flash(f"NF-e autorizada pela SEFAZ ✅ cStat {result.get('cStat')} - {result.get('xMotivo') or 'Autorizada'}", "ok")
-        return redirect(url_for("danfe_devolucao", devolucao_id=devolucao_id))
+        return redirect(url_for("ver_devolucao", devolucao_id=devolucao_id, emitida=1))
     if result.get("cStat"):
         flash(f"NF-e não autorizada pela SEFAZ. cStat {result.get('cStat')}: {result.get('xMotivo') or result.get('error') or 'Falha desconhecida'}", "erro")
     else:
         flash(f"Falha antes do envio à SEFAZ: {result.get('error') or result.get('xMotivo') or 'Falha desconhecida'}", "erro")
     return redirect(url_for("ver_devolucao", devolucao_id=devolucao_id))
 
+
+@app.route("/compartilhar/danfe/<token>")
+def danfe_devolucao_publico(token):
+    try:
+        payload = danfe_share_serializer().loads(token, max_age=7 * 24 * 60 * 60)
+        devolucao_id = int(payload.get("devolucao_id"))
+    except (BadSignature, SignatureExpired, TypeError, ValueError):
+        return "Link do DANFE inválido ou expirado.", 410
+
+    dev = fetch_one("SELECT * FROM devolucoes WHERE id=?", (devolucao_id,))
+    if not dev or dev["status"] != "Autorizada SEFAZ":
+        return "DANFE indisponível.", 404
+    path = fiscal_safe_file(cfg_val(dev, "danfe_path"))
+    if not path:
+        return "Arquivo DANFE não encontrado.", 404
+    return send_file(path, mimetype="application/pdf", as_attachment=False, download_name=f"DANFE-NFe-{dev['nf_devolucao_numero'] or devolucao_id}.pdf")
 
 @app.route("/devolucoes/<int:devolucao_id>/danfe")
 @login_required

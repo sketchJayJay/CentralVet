@@ -13,6 +13,11 @@
     <a class="btn" href="{{ url_for('nova_devolucao') }}">Nova devolução</a>
     {% if dev.status == 'Autorizada SEFAZ' %}
       <a class="btn green" target="_blank" href="{{ url_for('danfe_devolucao', devolucao_id=dev.id) }}">Abrir / imprimir DANFE oficial</a>
+      <button type="button" class="btn green" id="btn-whatsapp-danfe"
+        data-danfe-auth="{{ url_for('danfe_devolucao', devolucao_id=dev.id) }}"
+        data-danfe-public="{{ url_for('danfe_devolucao_publico', token=share_token) }}"
+        data-numero="{{ dev.nf_devolucao_numero or dev.id }}"
+        data-chave="{{ dev.nf_devolucao_chave or '' }}">Enviar pelo WhatsApp</button>
       <a class="btn secondary" href="{{ url_for('xml_devolucao', devolucao_id=dev.id) }}">Baixar XML autorizado</a>
     {% else %}
       <form method="post" action="{{ url_for('emitir_devolucao_sefaz', devolucao_id=dev.id) }}" style="display:inline" onsubmit="return confirm('Enviar esta NF-e para autorização da SEFAZ agora?')">
@@ -21,6 +26,21 @@
     {% endif %}
   </div>
 </section>
+
+{% if dev.status == 'Autorizada SEFAZ' and request.args.get('emitida') %}
+<div class="card" style="border:2px solid #19a974">
+  <h2>✅ NF-e autorizada. O que deseja fazer agora?</h2>
+  <p>A nota já foi autorizada pela SEFAZ. Você pode imprimir o DANFE ou enviar para o fornecedor pelo WhatsApp.</p>
+  <div class="actions">
+    <a class="btn green" target="_blank" href="{{ url_for('danfe_devolucao', devolucao_id=dev.id) }}">Imprimir DANFE</a>
+    <button type="button" class="btn green whatsapp-share-trigger"
+      data-danfe-auth="{{ url_for('danfe_devolucao', devolucao_id=dev.id) }}"
+      data-danfe-public="{{ url_for('danfe_devolucao_publico', token=share_token) }}"
+      data-numero="{{ dev.nf_devolucao_numero or dev.id }}"
+      data-chave="{{ dev.nf_devolucao_chave or '' }}">Enviar DANFE pelo WhatsApp</button>
+  </div>
+</div>
+{% endif %}
 
 <div class="grid">
   <div class="card metric"><div class="label">Status</div><div class="value {{ 'green' if dev.status == 'Autorizada SEFAZ' else 'warn' }}">{{dev.status or '-'}}</div></div>
@@ -95,5 +115,50 @@
     <button class="danger">Excluir tentativa</button>
   </form>
 </div>
+{% endif %}
+
+{% if dev.status == 'Autorizada SEFAZ' %}
+<script>
+(function () {
+  async function compartilharWhatsApp(btn) {
+    const authUrl = btn.dataset.danfeAuth;
+    const publicUrl = new URL(btn.dataset.danfePublic, window.location.origin).href;
+    const numero = btn.dataset.numero || '';
+    const chave = btn.dataset.chave || '';
+    const texto = `Olá! Segue a NF-e de devolução nº ${numero}.${chave ? `\nChave: ${chave}` : ''}\nDANFE: ${publicUrl}`;
+
+    const original = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = 'Preparando DANFE...';
+
+    try {
+      const resp = await fetch(authUrl, { credentials: 'same-origin' });
+      if (!resp.ok) throw new Error('Não foi possível carregar o DANFE.');
+      const blob = await resp.blob();
+      const arquivo = new File([blob], `DANFE-NFe-${numero}.pdf`, { type: 'application/pdf' });
+
+      if (navigator.share && (!navigator.canShare || navigator.canShare({ files: [arquivo] }))) {
+        await navigator.share({
+          title: `NF-e de devolução ${numero}`,
+          text: `Olá! Segue a NF-e de devolução nº ${numero}.`,
+          files: [arquivo]
+        });
+        return;
+      }
+    } catch (e) {
+      if (e && e.name === 'AbortError') return;
+    } finally {
+      btn.disabled = false;
+      btn.textContent = original;
+    }
+
+    window.open(`https://wa.me/?text=${encodeURIComponent(texto)}`, '_blank', 'noopener');
+  }
+
+  document.querySelectorAll('#btn-whatsapp-danfe, .whatsapp-share-trigger').forEach(function (btn) {
+    btn.addEventListener('click', function () { compartilharWhatsApp(btn); });
+  });
+})();
+</script>
 {% endif %}
 {% endblock %}
