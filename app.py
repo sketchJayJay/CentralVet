@@ -1597,6 +1597,139 @@ def _thermal_date(value):
     except Exception:
         return raw
 
+
+def _pos5890u_ascii(value):
+    """Texto seguro para a POS-5890U em modo ESC/POS raw.
+
+    A POS-5890U e clones costumam variar no mapa de code pages. Para evitar
+    caracteres quebrados no caixa, normalizamos acentos para ASCII. Isso nao
+    altera valores/codigos e deixa a impressao previsivel em qualquer revisao.
+    """
+    import unicodedata
+    text = str(value or "")
+    return unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode("ascii")
+
+
+def _pos5890u_wrap(text, width=32):
+    text = _pos5890u_ascii(text).strip()
+    if not text:
+        return [""]
+    words = text.split()
+    lines, current = [], ""
+    for word in words:
+        if len(word) > width:
+            if current:
+                lines.append(current)
+                current = ""
+            while len(word) > width:
+                lines.append(word[:width])
+                word = word[width:]
+            current = word
+            continue
+        candidate = word if not current else current + " " + word
+        if len(candidate) <= width:
+            current = candidate
+        else:
+            lines.append(current)
+            current = word
+    if current:
+        lines.append(current)
+    return lines or [""]
+
+
+def _pos5890u_lr(left, right, width=32):
+    left = _pos5890u_ascii(left)
+    right = _pos5890u_ascii(right)
+    if len(right) >= width:
+        return right[-width:]
+    max_left = max(0, width - len(right) - 1)
+    left = left[:max_left]
+    return left + (" " * max(1, width - len(left) - len(right))) + right
+
+
+def build_pos5890u_escpos(venda, itens):
+    """Gera bytes ESC/POS para POS-5890U, 58 mm / 384 dots.
+
+    Usa 32 colunas (fonte A) e envia somente os bytes do recibo. Nao existe
+    tamanho de pagina, portanto a impressora para logo apos o ultimo line feed,
+    evitando o rolo em branco causado pelo driver do Edge/Windows.
+    """
+    ESC = b"\x1b"
+    GS = b"\x1d"
+    out = bytearray()
+    out += ESC + b"@"                 # inicializa
+    out += ESC + b"a" + b"\x01"       # centralizado
+    out += ESC + b"E" + b"\x01"       # negrito
+    out += GS + b"!" + b"\x11"        # 2x largura/altura
+    out += b"CENTRALVET\n"
+    out += GS + b"!" + b"\x00"        # tamanho normal
+    out += b"AGROPECUARIA\n"
+    out += ESC + b"E" + b"\x00"
+    out += _pos5890u_ascii(f"Venda #{venda['id']} - {_thermal_date(venda['data'])}").encode("ascii") + b"\n"
+    out += ESC + b"a" + b"\x00"       # esquerda
+    out += (b"-" * 32) + b"\n"
+
+    cliente = venda['cliente_nome'] or 'Consumidor'
+    for line in _pos5890u_wrap(f"Cliente: {cliente}"):
+        out += line.encode("ascii") + b"\n"
+    if venda['nf_status'] and venda['nf_status'] != 'Não emitida':
+        fiscal = f"Fiscal: {venda['nf_status']} {venda['nf_numero'] or ''}".strip()
+        for line in _pos5890u_wrap(fiscal):
+            out += line.encode("ascii") + b"\n"
+    out += (b"-" * 32) + b"\n"
+
+    for item in itens:
+        for line in _pos5890u_wrap(item['produto_nome']):
+            out += line.encode("ascii") + b"\n"
+        qtd = _thermal_num(item['quantidade'])
+        unit = _thermal_money(item['preco_unit'])
+        total = _thermal_money(item['total'])
+        out += _pos5890u_lr(f"{qtd} x {unit}", total).encode("ascii") + b"\n"
+
+    out += (b"-" * 32) + b"\n"
+    out += ESC + b"E" + b"\x01"
+    out += GS + b"!" + b"\x01"        # altura dupla, largura normal
+    total_txt = _pos5890u_ascii(f"TOTAL {_thermal_money(venda['total'])}")
+    out += total_txt.rjust(32).encode("ascii") + b"\n"
+    out += GS + b"!" + b"\x00"
+    out += ESC + b"E" + b"\x00"
+    for line in _pos5890u_wrap(f"Pagamento: {venda['forma_pagamento'] or '-'} - {venda['status'] or '-'}"):
+        out += line.encode("ascii") + b"\n"
+    if venda['observacao']:
+        for line in _pos5890u_wrap(f"Obs.: {venda['observacao']}"):
+            out += line.encode("ascii") + b"\n"
+    out += (b"-" * 32) + b"\n"
+    out += ESC + b"a" + b"\x01"
+    out += ESC + b"E" + b"\x01"
+    out += b"Obrigado pela preferencia!\n"
+    out += ESC + b"E" + b"\x00"
+    if not venda['nf_status'] or venda['nf_status'] != 'Autorizada SEFAZ':
+        for line in _pos5890u_wrap("Recibo sem valor fiscal quando nao houver documento fiscal autorizado."):
+            out += line.encode("ascii") + b"\n"
+    out += ESC + b"a" + b"\x00"
+    out += b"\n\n\n"                  # avanca so o necessario para destacar
+    return bytes(out)
+
+
+@app.route("/api/vendas/<int:venda_id>/pos5890u")
+@login_required
+def api_venda_pos5890u(venda_id):
+    venda = fetch_one("SELECT * FROM vendas WHERE id=?", (venda_id,))
+    if not venda:
+        return jsonify({"ok": False, "erro": "Venda nao encontrada."}), 404
+    itens = fetch_all("SELECT * FROM venda_itens WHERE venda_id=? ORDER BY id", (venda_id,))
+    payload = build_pos5890u_escpos(venda, itens)
+    return jsonify({
+        "ok": True,
+        "modelo": "POS-5890U",
+        "printer_hint": "POS-58",
+        "paper_mm": 58,
+        "dots": 384,
+        "columns": 32,
+        "escpos_base64": base64.b64encode(payload).decode("ascii"),
+    })
+
+
 def build_pos58_pdf(venda, itens):
     page_width = 58 * mm
     margin_x = 4 * mm

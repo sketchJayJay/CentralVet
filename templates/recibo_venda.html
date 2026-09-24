@@ -1,15 +1,27 @@
-
 {% extends "base.html" %}
 {% block content %}
-<div class="hide-print actions">
+<div class="hide-print actions" style="align-items:center;gap:10px;flex-wrap:wrap">
   <a class="btn secondary" href="{{ url_for('vendas') }}">Voltar</a>
-  <a class="btn green" target="_blank" href="{{ url_for('cupom_termico_pdf', venda_id=venda.id) }}">Abrir cupom POS-58</a>
+  <button type="button" class="btn green" id="btn-pos5890u" onclick="imprimirPOS5890U({{ venda.id }})">Imprimir direto POS-5890U</button>
+  <button type="button" class="btn secondary" onclick="conectarPOS5890U()">Conectar impressora</button>
+  <a class="btn secondary" target="_blank" href="{{ url_for('cupom_termico_pdf', venda_id=venda.id) }}">PDF 58 mm (reserva)</a>
   <button onclick="window.print()" class="secondary">Imprimir A4 / salvar PDF</button>
   <form method="post" action="{{ url_for('emitir_fiscal', venda_id=venda.id) }}" style="display:inline">
     <select name="nf_tipo" style="width:auto"><option>NFC-e</option><option>NF-e</option></select>
     <button>Preparar nota fiscal</button>
   </form>
 </div>
+
+<div class="hide-print card" style="margin:12px 0;padding:14px 16px">
+  <b>Impressora térmica:</b> POS-5890U • bobina 57,5/58 mm • ESC/POS • 384 pontos/linha<br>
+  <span id="pos5890-status" style="font-size:13px">Clique em “Conectar impressora” na primeira vez neste notebook.</span>
+  <div id="pos5890-ajuda" style="display:none;margin-top:8px;font-size:13px">
+    Para impressão direta sem a folha gigante do Edge, instale e deixe aberto o <b>QZ Tray</b> neste notebook.
+    Depois clique em “Conectar impressora” e permita o acesso quando o QZ perguntar.
+    <a href="https://qz.io/download/" target="_blank" rel="noopener">Baixar QZ Tray</a>
+  </div>
+</div>
+
 <div class="receipt">
   <div class="top receipt-top">
     <div class="receipt-logo-line">
@@ -30,4 +42,103 @@
   <hr>
   <p style="font-size:12px">Documento sem valor fiscal quando a NF-e/NFC-e ainda não estiver autorizada. A emissão fiscal real depende da configuração fiscal/certificado e ambiente de emissão.</p>
 </div>
+
+<script src="https://cdn.jsdelivr.net/npm/qz-tray@2.3.0/qz-tray.js"></script>
+<script>
+let centralvetPosPrinter = localStorage.getItem('centralvet_pos5890u_printer') || '';
+
+function posStatus(msg, ok) {
+  const el = document.getElementById('pos5890-status');
+  if (el) {
+    el.textContent = msg;
+    el.style.color = ok === true ? '#087f5b' : (ok === false ? '#b42318' : 'inherit');
+  }
+}
+
+function mostrarAjudaPOS() {
+  const el = document.getElementById('pos5890-ajuda');
+  if (el) el.style.display = 'block';
+}
+
+async function qzConectar() {
+  if (typeof qz === 'undefined') {
+    mostrarAjudaPOS();
+    throw new Error('QZ Tray não carregou. Verifique a internet e instale o QZ Tray.');
+  }
+  if (!qz.websocket.isActive()) {
+    posStatus('Conectando ao QZ Tray...');
+    await qz.websocket.connect({ retries: 2, delay: 1 });
+  }
+}
+
+async function localizarPOS5890U() {
+  await qzConectar();
+  const printers = await qz.printers.find();
+  if (!printers || !printers.length) throw new Error('Nenhuma impressora encontrada no Windows.');
+
+  if (centralvetPosPrinter && printers.includes(centralvetPosPrinter)) return centralvetPosPrinter;
+
+  const preferred = printers.find(p => /^POS-58$/i.test(p))
+    || printers.find(p => /POS[- _]?5890U/i.test(p))
+    || printers.find(p => /POS[- _]?58/i.test(p))
+    || printers.find(p => /5890/i.test(p));
+
+  if (preferred) {
+    centralvetPosPrinter = preferred;
+    localStorage.setItem('centralvet_pos5890u_printer', preferred);
+    return preferred;
+  }
+
+  const escolha = prompt('Não encontrei automaticamente a POS-5890U. Digite exatamente o nome da impressora:\n\n' + printers.join('\n'));
+  if (!escolha || !printers.includes(escolha)) throw new Error('Impressora não selecionada.');
+  centralvetPosPrinter = escolha;
+  localStorage.setItem('centralvet_pos5890u_printer', escolha);
+  return escolha;
+}
+
+async function conectarPOS5890U() {
+  try {
+    const printer = await localizarPOS5890U();
+    posStatus('Conectada: ' + printer + ' • modo ESC/POS direto', true);
+    return printer;
+  } catch (e) {
+    console.error(e);
+    mostrarAjudaPOS();
+    posStatus(e.message || String(e), false);
+  }
+}
+
+async function imprimirPOS5890U(vendaId) {
+  const btn = document.getElementById('btn-pos5890u');
+  const original = btn ? btn.textContent : '';
+  try {
+    if (btn) { btn.disabled = true; btn.textContent = 'Enviando para POS-5890U...'; }
+    const printer = await localizarPOS5890U();
+    const resp = await fetch(`/api/vendas/${vendaId}/pos5890u`, { credentials: 'same-origin', cache: 'no-store' });
+    const payload = await resp.json();
+    if (!resp.ok || !payload.ok) throw new Error(payload.erro || 'Não foi possível montar o cupom.');
+
+    const config = qz.configs.create(printer, { jobName: `CENTRALVET Venda ${vendaId}` });
+    const data = [{
+      type: 'raw',
+      format: 'command',
+      flavor: 'base64',
+      data: payload.escpos_base64
+    }];
+
+    await qz.print(config, data);
+    posStatus('Cupom enviado direto para ' + printer + '. Sem página/folha do Edge.', true);
+  } catch (e) {
+    console.error(e);
+    mostrarAjudaPOS();
+    posStatus((e && e.message) ? e.message : String(e), false);
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = original; }
+  }
+}
+
+window.addEventListener('load', () => {
+  if (centralvetPosPrinter) posStatus('Impressora salva neste notebook: ' + centralvetPosPrinter);
+});
+</script>
 {% endblock %}

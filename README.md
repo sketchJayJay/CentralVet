@@ -116,3 +116,16 @@ centralvet-agropecuaria-certs -> /app/certs
 Se `/app/data` nascer vazio após um redeploy, o sistema restaura automaticamente o banco espelho de `/app/certs` antes de inicializar as tabelas. Cadastros de produtos, clientes, fornecedores, vendas, financeiro e devoluções deixam de depender do filesystem efêmero do container.
 
 Não renomeie nem recrie esses volumes entre redeploys. Um redeploy normal deve reutilizar exatamente os mesmos volumes.
+
+## POS-5890U - impressão direta ESC/POS
+Esta versão não depende do tamanho de página do Edge para a impressora térmica.
+A POS-5890U trabalha com papel 57,5/58 mm e 384 dots por linha. O recibo é enviado em comandos ESC/POS raw via QZ Tray instalado no notebook do caixa.
+
+Passos no notebook do caixa:
+1. Instalar QZ Tray (gratuito) em https://qz.io/download/
+2. Manter QZ Tray aberto/iniciando com o Windows.
+3. No recibo, clicar em "Conectar impressora" e permitir acesso.
+4. O sistema procura primeiro a fila "POS-58", depois nomes contendo POS-5890U/POS-58/5890.
+5. Usar "Imprimir direto POS-5890U". O Edge não abre a prévia de página; os bytes vão direto para a impressora.
+
+O PDF 58 mm continua disponível apenas como reserva.
