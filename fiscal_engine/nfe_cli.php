@@ -167,6 +167,49 @@ try {
         ]);
     }
 
+    if ($action === 'cce') {
+        $tools = makeTools($p, 55);
+        $chave = digits($p['chave'] ?? '');
+        $correcao = s($p['correcao'] ?? '');
+        $seq = max(1, (int)($p['sequencia'] ?? 1));
+        if (strlen($chave) !== 44) throw new RuntimeException('Chave da NF-e inválida para Carta de Correção.');
+        if (mb_strlen($correcao) < 15) throw new RuntimeException('A correção precisa ter pelo menos 15 caracteres.');
+        if (mb_strlen($correcao) > 1000) throw new RuntimeException('A correção ultrapassa 1000 caracteres.');
+        $response = $tools->sefazCCe($chave, $correcao, $seq);
+        $std = (new Standardize($response))->toStd();
+        $loteCStat = (string)($std->cStat ?? '');
+        $loteMotivo = (string)($std->xMotivo ?? '');
+        $retEvento = $std->retEvento ?? null;
+        if (is_array($retEvento)) $retEvento = $retEvento[0] ?? null;
+        $infEvento = $retEvento->infEvento ?? null;
+        $cStat = (string)($infEvento->cStat ?? $loteCStat);
+        $xMotivo = (string)($infEvento->xMotivo ?? $loteMotivo);
+        $nProt = (string)($infEvento->nProt ?? '');
+        $dhReg = (string)($infEvento->dhRegEvento ?? '');
+        $accepted = in_array($cStat, ['135', '136'], true);
+        $xmlPath = '';
+        if ($accepted) {
+            $outputDir = s($p['output_dir'] ?? '');
+            if (!$outputDir) throw new RuntimeException('Diretório de saída da CC-e não informado.');
+            if (!is_dir($outputDir) && !mkdir($outputDir, 0770, true) && !is_dir($outputDir)) {
+                throw new RuntimeException('Não foi possível criar o diretório da CC-e.');
+            }
+            $procXml = Complements::toAuthorize($tools->lastRequest, $response);
+            $xmlPath = $outputDir . '/CCe-' . $chave . '-seq' . $seq . '-proc.xml';
+            file_put_contents($xmlPath, $procXml);
+        }
+        out([
+            'ok' => true,
+            'accepted' => $accepted,
+            'cStat' => $cStat,
+            'xMotivo' => $xMotivo,
+            'protocolo' => $nProt,
+            'registrado_em' => $dhReg,
+            'xml_path' => $xmlPath,
+            'raw_response' => $response,
+        ]);
+    }
+
     if ($action === 'emit_nfce') {
         $issuer = $p['issuer'] ?? [];
         $tpAmb = (int)($p['tpAmb'] ?? 2);

@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="hero">
+  <span class="badge">Fiscal</span>
+  <h1>Carta de Correção</h1>
+  <p>Escolha uma NF-e autorizada para registrar uma CC-e na SEFAZ.</p>
+  <div class="actions"><a class="btn secondary" href="{{ url_for('fiscal') }}">Voltar ao fiscal</a></div>
+</section>
+<div class="card">
+  <div class="table-wrap"><table>
+    <thead><tr><th>NF-e</th><th>Fornecedor / destinatário</th><th>Chave</th><th>CC-e</th><th>Ação</th></tr></thead>
+    <tbody>
+    {% for d in notas %}
+      <tr>
+        <td><b>{{ d.nf_devolucao_numero or '-' }}</b><br><small>Série {{ d.serie_origem or '1' }}</small></td>
+        <td>{{ d.fornecedor_nome or '-' }}</td>
+        <td><small>{{ d.nf_devolucao_chave or '-' }}</small></td>
+        <td>{{ d.qtd_cce or 0 }} registrada(s)</td>
+        <td><a class="btn green" href="{{ url_for('carta_correcao', devolucao_id=d.id) }}">Emitir / ver CC-e</a></td>
+      </tr>
+    {% else %}<tr><td colspan="5">Nenhuma NF-e autorizada disponível.</td></tr>{% endfor %}
+    </tbody>
+  </table></div>
+</div>
+{% endblock %}

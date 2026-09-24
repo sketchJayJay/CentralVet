@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="hero">
+  <span class="badge">CC-e</span>
+  <h1>Carta de Correção da NF-e {{ dev.nf_devolucao_numero or '-' }}</h1>
+  <p>Chave: {{ dev.nf_devolucao_chave }}</p>
+  <div class="actions"><a class="btn secondary" href="{{ url_for('ver_devolucao', devolucao_id=dev.id) }}">Voltar à NF-e</a></div>
+</section>
+<div class="card dark">
+  <h2>O que a CC-e não pode alterar</h2>
+  <p style="color:#b9d7ee">Não use Carta de Correção para alterar valor/base/alíquota/quantidade da operação, trocar remetente ou destinatário, nem alterar data de emissão/saída. Para esses casos é necessário outro procedimento fiscal.</p>
+</div>
+<div class="card">
+  <h2>Emitir nova Carta de Correção</h2>
+  {% if texto_anterior %}
+    <p><b>Atenção:</b> a nova CC-e substitui a anterior. O texto abaixo já foi preenchido com a última correção; mantenha nele todas as correções que ainda devem valer.</p>
+  {% endif %}
+  <form method="post" onsubmit="return confirm('Enviar esta Carta de Correção para a SEFAZ agora?')">
+    <label>Correção completa</label>
+    <textarea name="correcao" rows="7" minlength="15" maxlength="1000" required placeholder="Ex.: Onde consta ..., considerar ...">{{ texto_anterior }}</textarea>
+    <small id="contador-cce"></small>
+    <div style="margin-top:14px"><button class="green">Enviar CC-e para SEFAZ</button></div>
+  </form>
+</div>
+<div class="card">
+  <h2>Histórico</h2>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Seq.</th><th>Status</th><th>Correção</th><th>cStat</th><th>Protocolo</th><th>Ações</th></tr></thead>
+    <tbody>
+    {% for c in anteriores %}
+      <tr>
+        <td>{{ c.sequencia }}</td>
+        <td><span class="pill {{ 'green' if c.status == 'Registrada SEFAZ' else 'warn' }}">{{ c.status }}</span></td>
+        <td style="max-width:420px;white-space:normal">{{ c.correcao }}</td>
+        <td>{{ c.cstat or '-' }}<br><small>{{ c.motivo or '' }}</small></td>
+        <td>{{ c.protocolo or '-' }}</td>
+        <td>{% if c.status == 'Registrada SEFAZ' %}<a class="btn secondary" href="{{ url_for('carta_correcao_xml', cce_id=c.id) }}">XML</a> <a class="btn secondary" target="_blank" href="{{ url_for('carta_correcao_imprimir', cce_id=c.id) }}">Imprimir</a>{% endif %}</td>
+      </tr>
+    {% else %}<tr><td colspan="6">Nenhuma Carta de Correção emitida para esta NF-e.</td></tr>{% endfor %}
+    </tbody>
+  </table></div>
+</div>
+<script>
+const ta=document.querySelector('textarea[name="correcao"]'), c=document.getElementById('contador-cce');
+function upd(){ c.textContent=`${ta.value.length}/1000 caracteres`; } ta.addEventListener('input',upd); upd();
+</script>
+{% endblock %}

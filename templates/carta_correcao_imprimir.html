@@ -1,0 +1,9 @@
+<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>CC-e NF-e {{ dev.nf_devolucao_numero }}</title>
+<style>body{font-family:Arial,sans-serif;margin:32px;color:#111}h1{font-size:22px}.box{border:1px solid #222;padding:14px;margin:14px 0}.muted{color:#555;font-size:12px}@media print{button{display:none}body{margin:12mm}}</style></head><body>
+<h1>Carta de Correção Eletrônica - CC-e</h1>
+<div class="box"><b>Emitente:</b> CENTRALVET AGROPECUARIA LTDA<br><b>NF-e:</b> {{ dev.nf_devolucao_numero }}<br><b>Chave:</b> {{ cce.chave_nfe }}<br><b>Sequência:</b> {{ cce.sequencia }}</div>
+<div class="box"><b>Correção:</b><p>{{ cce.correcao }}</p></div>
+<div class="box"><b>Status:</b> {{ cce.status }}<br><b>cStat:</b> {{ cce.cstat or '-' }} - {{ cce.motivo or '' }}<br><b>Protocolo:</b> {{ cce.protocolo or '-' }}<br><b>Registro:</b> {{ cce.registrado_em or cce.created_at or '-' }}</div>
+<p class="muted">Representação para consulta/impressão. O XML protocolado é o registro eletrônico do evento.</p>
+<button onclick="window.print()">Imprimir</button>
+</body></html>

@@ -28,10 +28,12 @@ FISCAL_DIR = os.path.join(DATA_DIR, "fiscal")
 FISCAL_ORIGINAL_DIR = os.path.join(FISCAL_DIR, "originais")
 FISCAL_NFE_DIR = os.path.join(FISCAL_DIR, "nfe")
 FISCAL_NFCE_DIR = os.path.join(FISCAL_DIR, "nfce")
+FISCAL_CCE_DIR = os.path.join(FISCAL_DIR, "cce")
 os.makedirs(BACKUP_DIR, exist_ok=True)
 os.makedirs(FISCAL_ORIGINAL_DIR, exist_ok=True)
 os.makedirs(FISCAL_NFE_DIR, exist_ok=True)
 os.makedirs(FISCAL_NFCE_DIR, exist_ok=True)
+os.makedirs(FISCAL_CCE_DIR, exist_ok=True)
 
 # Segunda cópia de segurança em /app/certs.
 # No Coolify, /app/certs já precisa ser persistente para manter o A1; por isso
@@ -1062,6 +1064,23 @@ def init_db():
             ('ambiente_emissao', 'TEXT'), ('baixar_estoque_solicitado', 'INTEGER DEFAULT 1'), ('emissao_tentativa_em', 'TEXT')
         ]:
             add_column(db, 'devolucoes', column, ddl)
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS cartas_correcao (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                devolucao_id INTEGER NOT NULL,
+                chave_nfe TEXT NOT NULL,
+                sequencia INTEGER NOT NULL DEFAULT 1,
+                correcao TEXT NOT NULL,
+                status TEXT DEFAULT 'Pendente',
+                cstat TEXT,
+                motivo TEXT,
+                protocolo TEXT,
+                xml_path TEXT,
+                registrado_em TEXT,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        db.execute("CREATE INDEX IF NOT EXISTS idx_cce_devolucao ON cartas_correcao(devolucao_id, sequencia)")
         add_column(db, 'devolucao_itens', 'item_origem_idx', 'INTEGER')
         db.execute("""UPDATE fiscal_config SET
             logradouro=COALESCE(NULLIF(logradouro,''), :logradouro), numero=COALESCE(NULLIF(numero,''), :numero),
@@ -2304,6 +2323,50 @@ def financeiro_excluir(item_id):
     return redirect(url_for("financeiro"))
 
 
+def emitir_cce_sefaz_internal(devolucao_id, correcao):
+    cfg = fetch_one("SELECT * FROM fiscal_config WHERE id=1")
+    dev = fetch_one("SELECT * FROM devolucoes WHERE id=?", (devolucao_id,))
+    if not cfg or not dev:
+        return {"ok": False, "accepted": False, "error": "NF-e ou configuração fiscal não encontrada."}
+    if dev["status"] != "Autorizada SEFAZ":
+        return {"ok": False, "accepted": False, "error": "A Carta de Correção só pode ser enviada para NF-e já autorizada."}
+    chave = only_digits(dev["nf_devolucao_chave"] or "")
+    if len(chave) != 44:
+        return {"ok": False, "accepted": False, "error": "Chave da NF-e inválida ou ausente."}
+    texto = (correcao or "").strip()
+    if len(texto) < 15:
+        return {"ok": False, "accepted": False, "error": "Descreva a correção com pelo menos 15 caracteres."}
+    if len(texto) > 1000:
+        return {"ok": False, "accepted": False, "error": "A correção ultrapassa o limite de 1000 caracteres."}
+    row = fetch_one("SELECT COALESCE(MAX(sequencia),0) seq FROM cartas_correcao WHERE devolucao_id=? AND status='Registrada SEFAZ'", (devolucao_id,))
+    seq = int(row["seq"] or 0) + 1
+    outdir = os.path.join(FISCAL_CCE_DIR, str(devolucao_id))
+    os.makedirs(outdir, exist_ok=True)
+    payload = fiscal_engine_base_payload(cfg)
+    payload.update({
+        "action": "cce",
+        "chave": chave,
+        "correcao": texto,
+        "sequencia": seq,
+        "output_dir": outdir,
+    })
+    result = run_fiscal_engine(payload, timeout=90)
+    status = "Registrada SEFAZ" if result.get("accepted") else "Rejeitada SEFAZ"
+    with get_db() as db:
+        cur = db.execute("""
+            INSERT INTO cartas_correcao
+            (devolucao_id, chave_nfe, sequencia, correcao, status, cstat, motivo, protocolo, xml_path, registrado_em)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (devolucao_id, chave, seq, texto, status, str(result.get("cStat") or ""),
+              result.get("xMotivo") or result.get("error") or "", result.get("protocolo") or "",
+              result.get("xml_path") or "", result.get("registrado_em") or ""))
+        cce_id = cur.lastrowid
+        db.commit()
+    backup_db("carta-correcao")
+    result["cce_id"] = cce_id
+    result["sequencia"] = seq
+    return result
+
 # ---------------- Fiscal / XML ----------------
 
 @app.route("/fiscal", methods=["GET","POST"])
@@ -2860,6 +2923,66 @@ def emitir_devolucao_sefaz(devolucao_id):
         flash(f"Falha antes do envio à SEFAZ: {result.get('error') or result.get('xMotivo') or 'Falha desconhecida'}", "erro")
     return redirect(url_for("ver_devolucao", devolucao_id=devolucao_id))
 
+
+@app.route("/cartas-correcao")
+@login_required
+def cartas_correcao():
+    notas = fetch_all("""
+        SELECT d.*,
+               (SELECT COUNT(*) FROM cartas_correcao c WHERE c.devolucao_id=d.id AND c.status='Registrada SEFAZ') AS qtd_cce
+        FROM devolucoes d
+        WHERE d.status='Autorizada SEFAZ'
+        ORDER BY d.id DESC
+    """)
+    return render_template("cartas_correcao.html", notas=notas)
+
+@app.route("/devolucoes/<int:devolucao_id>/carta-correcao", methods=["GET", "POST"])
+@login_required
+def carta_correcao(devolucao_id):
+    dev = fetch_one("SELECT * FROM devolucoes WHERE id=?", (devolucao_id,))
+    if not dev:
+        flash("NF-e não encontrada.", "erro")
+        return redirect(url_for("cartas_correcao"))
+    if dev["status"] != "Autorizada SEFAZ":
+        flash("A Carta de Correção só pode ser enviada para NF-e autorizada.", "erro")
+        return redirect(url_for("ver_devolucao", devolucao_id=devolucao_id))
+    anteriores = fetch_all("SELECT * FROM cartas_correcao WHERE devolucao_id=? ORDER BY sequencia DESC, id DESC", (devolucao_id,))
+    if request.method == "POST":
+        texto = (request.form.get("correcao") or "").strip()
+        result = emitir_cce_sefaz_internal(devolucao_id, texto)
+        if result.get("accepted"):
+            flash(f"Carta de Correção registrada na SEFAZ ✅ cStat {result.get('cStat')} - {result.get('xMotivo') or 'Evento registrado'}", "ok")
+            return redirect(url_for("carta_correcao", devolucao_id=devolucao_id))
+        if result.get("cStat"):
+            flash(f"CC-e não registrada. cStat {result.get('cStat')}: {result.get('xMotivo') or result.get('error') or 'Rejeitada'}", "erro")
+        else:
+            flash(f"Falha antes do envio da CC-e: {result.get('error') or 'Falha desconhecida'}", "erro")
+        return redirect(url_for("carta_correcao", devolucao_id=devolucao_id))
+    ultima = next((c for c in anteriores if c["status"] == "Registrada SEFAZ"), None)
+    texto_anterior = ultima["correcao"] if ultima else ""
+    return render_template("carta_correcao.html", dev=dev, anteriores=anteriores, texto_anterior=texto_anterior)
+
+@app.route("/cartas-correcao/<int:cce_id>/xml")
+@login_required
+def carta_correcao_xml(cce_id):
+    cce = fetch_one("SELECT * FROM cartas_correcao WHERE id=?", (cce_id,))
+    if not cce or cce["status"] != "Registrada SEFAZ":
+        flash("XML protocolado da CC-e não disponível.", "erro")
+        return redirect(url_for("cartas_correcao"))
+    path = fiscal_safe_file(cce["xml_path"])
+    if not path:
+        flash("Arquivo XML da CC-e não encontrado no armazenamento fiscal.", "erro")
+        return redirect(url_for("carta_correcao", devolucao_id=cce["devolucao_id"]))
+    return send_file(path, mimetype="application/xml", as_attachment=True, download_name=f"CCe-NFe-{cce['chave_nfe']}-seq{cce['sequencia']}.xml")
+
+@app.route("/cartas-correcao/<int:cce_id>/imprimir")
+@login_required
+def carta_correcao_imprimir(cce_id):
+    cce = fetch_one("SELECT * FROM cartas_correcao WHERE id=?", (cce_id,))
+    if not cce:
+        return "Carta de Correção não encontrada.", 404
+    dev = fetch_one("SELECT * FROM devolucoes WHERE id=?", (cce["devolucao_id"],))
+    return render_template("carta_correcao_imprimir.html", cce=cce, dev=dev)
 
 @app.route("/compartilhar/danfe/<token>")
 def danfe_devolucao_publico(token):

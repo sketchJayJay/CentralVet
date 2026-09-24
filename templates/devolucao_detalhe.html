@@ -19,6 +19,7 @@
         data-numero="{{ dev.nf_devolucao_numero or dev.id }}"
         data-chave="{{ dev.nf_devolucao_chave or '' }}">Enviar pelo WhatsApp</button>
       <a class="btn secondary" href="{{ url_for('xml_devolucao', devolucao_id=dev.id) }}">Baixar XML autorizado</a>
+      <a class="btn secondary" href="{{ url_for('carta_correcao', devolucao_id=dev.id) }}">Carta de correção</a>
     {% else %}
       <form method="post" action="{{ url_for('emitir_devolucao_sefaz', devolucao_id=dev.id) }}" style="display:inline" onsubmit="return confirm('Enviar esta NF-e para autorização da SEFAZ agora?')">
         <button class="green">Tentar autorização novamente</button>
