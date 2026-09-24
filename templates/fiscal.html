@@ -110,9 +110,9 @@
 <div class="grid2">
   <div class="card">
     <h2>Últimos XMLs importados</h2>
-    <div class="table-wrap"><table><thead><tr><th>NF</th><th>Fornecedor</th><th>Itens</th><th>Total</th></tr></thead><tbody>
-      {% for x in xmls %}<tr><td>{{x.numero or '-'}}</td><td>{{x.fornecedor_nome or '-'}}</td><td>{{x.itens_qtd}}</td><td>{{x.total|money}}</td></tr>
-      {% else %}<tr><td colspan="4">Nenhum XML importado ainda.</td></tr>{% endfor %}
+    <div class="table-wrap"><table><thead><tr><th>NF</th><th>Fornecedor</th><th>Tipo</th><th>Itens</th><th>Total</th></tr></thead><tbody>
+      {% for x in xmls %}<tr><td>{{x.numero or '-'}}</td><td>{{x.fornecedor_nome or '-'}}</td><td>{{x.tipo or 'Entrada'}}</td><td>{{x.itens_qtd}}</td><td>{{x.total|money}}</td></tr>
+      {% else %}<tr><td colspan="5">Nenhum XML importado ainda.</td></tr>{% endfor %}
     </tbody></table></div>
   </div>
   <div class="card">
@@ -126,9 +126,9 @@
 
   <div class="card">
     <h2>Últimas devoluções</h2>
-    <div class="table-wrap"><table><thead><tr><th>#</th><th>Fornecedor</th><th>NF origem</th><th>Status</th></tr></thead><tbody>
-      {% for d in devolucoes %}<tr><td><a class="btn secondary" href="{{ url_for('ver_devolucao', devolucao_id=d.id) }}">#{{d.id}}</a></td><td>{{d.fornecedor_nome or '-'}}</td><td>{{d.numero_origem or '-'}}</td><td><span class="pill warn">{{d.status}}</span></td></tr>
-      {% else %}<tr><td colspan="4">Nenhuma devolução criada ainda.</td></tr>{% endfor %}
+    <div class="table-wrap"><table><thead><tr><th>#</th><th>Fornecedor</th><th>NF origem</th><th>Status</th><th>Arquivos</th></tr></thead><tbody>
+      {% for d in devolucoes %}<tr><td><a class="btn secondary" href="{{ url_for('ver_devolucao', devolucao_id=d.id) }}">#{{d.id}}</a></td><td>{{d.fornecedor_nome or '-'}}</td><td>{{d.numero_origem or '-'}}</td><td><span class="pill {{ 'green' if d.status == 'Autorizada SEFAZ' else 'warn' }}">{{d.status}}</span></td><td>{% if d.xml_autorizado_path %}<a class="btn secondary" href="{{ url_for('xml_devolucao', devolucao_id=d.id) }}">XML</a>{% endif %} {% if d.danfe_path %}<a class="btn green" target="_blank" href="{{ url_for('danfe_devolucao', devolucao_id=d.id) }}">DANFE</a>{% endif %}</td></tr>
+      {% else %}<tr><td colspan="5">Nenhuma devolução criada ainda.</td></tr>{% endfor %}
     </tbody></table></div>
   </div>
 </div>

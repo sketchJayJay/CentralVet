@@ -3,7 +3,8 @@
 {% block content %}
 <div class="hide-print actions">
   <a class="btn secondary" href="{{ url_for('vendas') }}">Voltar</a>
-  <button onclick="window.print()" class="green">Imprimir / salvar PDF</button>
+  <a class="btn green" target="_blank" href="{{ url_for('cupom_termico', venda_id=venda.id, auto=1) }}">Imprimir cupom térmico</a>
+  <button onclick="window.print()" class="secondary">Imprimir A4 / salvar PDF</button>
   <form method="post" action="{{ url_for('emitir_fiscal', venda_id=venda.id) }}" style="display:inline">
     <select name="nf_tipo" style="width:auto"><option>NFC-e</option><option>NF-e</option></select>
     <button>Preparar nota fiscal</button>

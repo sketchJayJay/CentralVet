@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Cupom venda #{{ venda.id }}</title>
+<style>
+  *{box-sizing:border-box}
+  html,body{margin:0!important;padding:0!important;background:#fff!important;color:#000;font-family:Arial,Helvetica,sans-serif;height:auto!important;min-height:0!important}
+  body{width:80mm;max-width:80mm;overflow:visible}
+  .ticket{width:72mm;margin:0 auto;padding:2mm 1mm 3mm;font-size:11px;line-height:1.25;height:auto;min-height:0}
+  .logo{text-align:center;margin:0 0 2mm}
+  .logo img{display:block;max-width:50mm;max-height:18mm;object-fit:contain;margin:0 auto 1mm}
+  h1{font-size:15px;margin:0;text-align:center}
+  .center{text-align:center}.right{text-align:right}.bold{font-weight:700}
+  .line{border-top:1px dashed #000;margin:2mm 0}
+  table{width:100%;border-collapse:collapse;font-size:10px}
+  th,td{padding:1mm .5mm;vertical-align:top;text-align:left;border:0}
+  th:last-child,td:last-child{text-align:right}
+  .total{font-size:15px;font-weight:800;text-align:right;margin-top:2mm}
+  .controls{width:72mm;margin:6px auto;display:flex;gap:6px}
+  button,a{border:0;padding:9px 10px;border-radius:7px;background:#0b6;color:#fff;font-weight:700;text-decoration:none;font-size:12px;cursor:pointer}
+  a{background:#444}
+  @media print{
+    @page{margin:0}
+    html,body{width:80mm!important;max-width:80mm!important;height:auto!important;min-height:0!important;margin:0!important;padding:0!important;overflow:visible!important}
+    .ticket{width:72mm!important;margin:0 auto!important;padding:2mm 1mm 2mm!important;height:auto!important;min-height:0!important;page-break-after:avoid!important;break-after:avoid-page!important}
+    .controls{display:none!important}
+  }
+</style>
+</head>
+<body>
+<div class="controls"><button onclick="window.print()">Imprimir</button><a href="{{ url_for('recibo_venda', venda_id=venda.id) }}">Voltar</a></div>
+<div class="ticket">
+  <div class="logo">
+    <img src="{{ url_for('static', filename='centralvet_logo_original.jpg') }}" alt="CENTRALVET">
+    <h1>CENTRALVET AGROPECUÁRIA</h1>
+    <div>Venda #{{ venda.id }} • {{ venda.data|brdate }}</div>
+  </div>
+  <div class="line"></div>
+  <div><span class="bold">Cliente:</span> {{ venda.cliente_nome or 'Consumidor' }}</div>
+  {% if venda.nf_status and venda.nf_status != 'Não emitida' %}<div><span class="bold">Fiscal:</span> {{ venda.nf_status }} {{ venda.nf_numero or '' }}</div>{% endif %}
+  <div class="line"></div>
+  <table>
+    <thead><tr><th>Item</th><th>Qtd x Unit.</th><th>Total</th></tr></thead>
+    <tbody>{% for i in itens %}<tr><td>{{ i.produto_nome }}</td><td>{{ i.quantidade|num }} x {{ i.preco_unit|money }}</td><td>{{ i.total|money }}</td></tr>{% endfor %}</tbody>
+  </table>
+  <div class="line"></div>
+  <div class="total">TOTAL: {{ venda.total|money }}</div>
+  <div><span class="bold">Pagamento:</span> {{ venda.forma_pagamento or '-' }} • {{ venda.status or '-' }}</div>
+  {% if venda.observacao %}<div><span class="bold">Obs.:</span> {{ venda.observacao }}</div>{% endif %}
+  <div class="line"></div>
+  <div class="center">Obrigado pela preferência.</div>
+  {% if not venda.nf_status or venda.nf_status != 'Autorizada SEFAZ' %}<div class="center" style="font-size:9px;margin-top:2mm">Documento auxiliar/recibo. Sem valor fiscal quando não houver documento fiscal autorizado.</div>{% endif %}
+</div>
+{% if auto %}<script>window.addEventListener('load',()=>setTimeout(()=>window.print(),250));</script>{% endif %}
+</body>
+</html>

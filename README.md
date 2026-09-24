@@ -92,3 +92,10 @@ A montagem do XML usa `Make::getXML()`. A chamada antiga `Make::monta()` foi rem
 - Em navegadores compatíveis com Web Share, o sistema tenta compartilhar o PDF do DANFE como arquivo.
 - Como fallback, abre o WhatsApp com mensagem pronta e link assinado do DANFE.
 - O link público do DANFE expira em 7 dias e só funciona para notas autorizadas pela SEFAZ.
+
+## Correções 24/09/2026
+- Compatibilidade/migração de bancos antigos para impedir queda em Relatórios.
+- Histórico de devoluções mostra XML e DANFE persistidos; recuperação automática dos caminhos no volume `/app/data/fiscal/nfe`.
+- XML usado diretamente em uma devolução passa a entrar também no histórico de XMLs.
+- Novo cupom térmico dedicado (80 mm), sem layout/base da PWA e sem altura mínima de viewport, evitando grande área branca no fim.
+- Cache do PWA incrementado para aplicar o CSS novo após redeploy.

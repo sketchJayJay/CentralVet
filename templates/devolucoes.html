@@ -27,7 +27,7 @@
         <td>{{d.numero_origem or '-'}} / Série {{d.serie_origem or '-'}}</td>
         <td><span class="pill {{ 'green' if d.status == 'Autorizada SEFAZ' else 'warn' }}">{{d.status}}</span>{% if d.sefaz_cstat %}<br><small>cStat {{d.sefaz_cstat}}</small>{% endif %}</td>
         <td>{{d.nf_devolucao_numero or '-'}}</td>
-        <td><a class="btn secondary" href="{{ url_for('ver_devolucao', devolucao_id=d.id) }}">Abrir</a>{% if d.status == 'Autorizada SEFAZ' %} <a class="btn green" target="_blank" href="{{ url_for('danfe_devolucao', devolucao_id=d.id) }}">DANFE</a>{% endif %}</td>
+        <td><a class="btn secondary" href="{{ url_for('ver_devolucao', devolucao_id=d.id) }}">Abrir</a>{% if d.xml_autorizado_path %} <a class="btn secondary" href="{{ url_for('xml_devolucao', devolucao_id=d.id) }}">XML</a>{% endif %}{% if d.danfe_path %} <a class="btn green" target="_blank" href="{{ url_for('danfe_devolucao', devolucao_id=d.id) }}">DANFE</a>{% endif %}</td>
       </tr>
       {% else %}<tr><td colspan="7">Nenhuma devolução criada ainda.</td></tr>{% endfor %}
       </tbody>

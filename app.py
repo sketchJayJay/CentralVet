@@ -755,6 +755,37 @@ def init_db():
             ('ean', 'TEXT'), ('cest', 'TEXT'), ('ultima_chave_xml', 'TEXT'), ('fornecedor_id', 'INTEGER')
         ]:
             add_column(db, 'produtos', column, ddl)
+        # Migrações de compatibilidade com bancos de versões antigas.
+        # CREATE TABLE IF NOT EXISTS não adiciona colunas novas em uma tabela já existente,
+        # então cada coluna usada por vendas/relatórios precisa ser garantida explicitamente.
+        for column, ddl in [
+            ('data', 'TEXT'), ('cliente_id', 'INTEGER'), ('cliente_nome', 'TEXT'), ('forma_pagamento', 'TEXT'),
+            ('status', "TEXT DEFAULT 'Pago'"), ('subtotal', 'REAL DEFAULT 0'), ('desconto', 'REAL DEFAULT 0'),
+            ('total', 'REAL DEFAULT 0'), ('lucro', 'REAL DEFAULT 0'), ('observacao', 'TEXT'), ('nf_tipo', 'TEXT'),
+            ('nf_status', "TEXT DEFAULT 'Não emitida'"), ('nf_numero', 'TEXT'), ('nf_obs', 'TEXT'),
+            ('created_at', 'TEXT')
+        ]:
+            add_column(db, 'vendas', column, ddl)
+        for column, ddl in [
+            ('venda_id', 'INTEGER'), ('produto_id', 'INTEGER'), ('produto_nome', 'TEXT'),
+            ('quantidade', 'REAL DEFAULT 0'), ('preco_unit', 'REAL DEFAULT 0'), ('custo_unit', 'REAL DEFAULT 0'),
+            ('total', 'REAL DEFAULT 0'), ('lucro', 'REAL DEFAULT 0')
+        ]:
+            add_column(db, 'venda_itens', column, ddl)
+        for column, ddl in [
+            ('data', 'TEXT'), ('tipo', 'TEXT'), ('descricao', 'TEXT'), ('valor', 'REAL DEFAULT 0'),
+            ('forma', 'TEXT'), ('status', "TEXT DEFAULT 'Pago'"), ('vencimento', 'TEXT'), ('pessoa', 'TEXT'),
+            ('referencia_tipo', 'TEXT'), ('referencia_id', 'INTEGER'), ('observacao', 'TEXT'), ('created_at', 'TEXT')
+        ]:
+            add_column(db, 'financeiro', column, ddl)
+        for column, ddl in [
+            ('chave', 'TEXT'), ('xml_hash', 'TEXT'), ('numero', 'TEXT'), ('serie', 'TEXT'), ('emissao', 'TEXT'),
+            ('fornecedor_nome', 'TEXT'), ('fornecedor_cnpj', 'TEXT'), ('total', 'REAL DEFAULT 0'),
+            ('itens_qtd', 'INTEGER DEFAULT 0'), ('observacao', 'TEXT'), ('created_at', 'TEXT'),
+            ('xml_path', 'TEXT'), ('tipo', "TEXT DEFAULT 'Entrada'"), ('devolucao_id', 'INTEGER')
+        ]:
+            add_column(db, 'xml_imports', column, ddl)
+
         for column, ddl in [
             ('certificado_path', 'TEXT'), ('certificado_senha_env', 'TEXT'), ('nf_serie', 'TEXT'), ('nf_numero_inicial', 'TEXT'),
             ('nfce_serie', 'TEXT'), ('nfce_numero_inicial', 'TEXT'), ('csc_id', 'TEXT'), ('csc_token', 'TEXT'),
@@ -806,6 +837,40 @@ def init_db():
         db.commit()
 
 init_db()
+
+
+def recover_devolucao_files():
+    """Reconecta registros antigos aos XMLs/DANFEs persistidos em /app/data após upgrades.
+
+    Versões anteriores já gravavam os arquivos em fiscal/nfe/<id>, mas nem sempre
+    registravam o caminho no banco. Esta rotina não cria nota nem altera numeração;
+    apenas reaponta arquivos que já existem no volume persistente.
+    """
+    try:
+        rows = fetch_all("SELECT id, xml_assinado_path, xml_autorizado_path, danfe_path FROM devolucoes ORDER BY id")
+        for row in rows:
+            folder = os.path.join(FISCAL_NFE_DIR, str(row["id"]))
+            if not os.path.isdir(folder):
+                continue
+            names = os.listdir(folder)
+            def pick(suffix):
+                matches = [os.path.join(folder, n) for n in names if n.lower().endswith(suffix.lower())]
+                return sorted(matches)[-1] if matches else ""
+            signed = row["xml_assinado_path"] if row["xml_assinado_path"] and os.path.isfile(row["xml_assinado_path"]) else pick("-assinado.xml")
+            authorized = row["xml_autorizado_path"] if row["xml_autorizado_path"] and os.path.isfile(row["xml_autorizado_path"]) else pick("-autorizado.xml")
+            danfe = row["danfe_path"] if row["danfe_path"] and os.path.isfile(row["danfe_path"]) else pick("-danfe.pdf")
+            if signed or authorized or danfe:
+                exec_sql("""UPDATE devolucoes SET
+                    xml_assinado_path=COALESCE(NULLIF(?,''), xml_assinado_path),
+                    xml_autorizado_path=COALESCE(NULLIF(?,''), xml_autorizado_path),
+                    danfe_path=COALESCE(NULLIF(?,''), danfe_path)
+                    WHERE id=?""", (signed, authorized, danfe, row["id"]))
+    except Exception:
+        # Nunca impede o sistema de subir por causa de uma recuperação opcional.
+        pass
+
+
+recover_devolucao_files()
 
 
 # ---------------- Auth ----------------
@@ -1159,8 +1224,22 @@ def nova_venda():
 @login_required
 def recibo_venda(venda_id):
     venda = fetch_one("SELECT * FROM vendas WHERE id=?", (venda_id,))
+    if not venda:
+        flash("Venda não encontrada.", "erro")
+        return redirect(url_for("vendas"))
     itens = fetch_all("SELECT * FROM venda_itens WHERE venda_id=?", (venda_id,))
     return render_template("recibo_venda.html", venda=venda, itens=itens)
+
+@app.route("/vendas/<int:venda_id>/cupom")
+@login_required
+def cupom_termico(venda_id):
+    venda = fetch_one("SELECT * FROM vendas WHERE id=?", (venda_id,))
+    if not venda:
+        flash("Venda não encontrada.", "erro")
+        return redirect(url_for("vendas"))
+    itens = fetch_all("SELECT * FROM venda_itens WHERE venda_id=? ORDER BY id", (venda_id,))
+    auto = request.args.get("auto") == "1"
+    return render_template("cupom_termico.html", venda=venda, itens=itens, auto=auto)
 
 @app.route("/vendas/<int:venda_id>/fiscal", methods=["POST"])
 @login_required
@@ -1278,8 +1357,9 @@ def fiscal():
         return redirect(url_for("fiscal"))
     cfg = fetch_one("SELECT * FROM fiscal_config WHERE id=1")
     notas = fetch_all("SELECT * FROM vendas WHERE nf_status!='Não emitida' ORDER BY id DESC LIMIT 80")
-    xmls = fetch_all("SELECT * FROM xml_imports ORDER BY id DESC LIMIT 10")
-    devolucoes = fetch_all("SELECT * FROM devolucoes ORDER BY id DESC LIMIT 8")
+    xmls = fetch_all("SELECT * FROM xml_imports ORDER BY id DESC LIMIT 20")
+    recover_devolucao_files()
+    devolucoes = fetch_all("SELECT * FROM devolucoes ORDER BY id DESC LIMIT 50")
     cert_status = cert_runtime_status()
     envs = {
         "CERTIFICADO_PATH": os.environ.get("CERTIFICADO_PATH", ""),
@@ -1676,6 +1756,19 @@ def salvar_devolucao():
         with open(original_path, "wb") as f:
             f.write(xml_bytes)
 
+    # Mantém o XML de origem visível no histórico fiscal mesmo quando ele foi
+    # importado diretamente pela tela de devolução (sem passar por /xml/importar).
+    with get_db() as db:
+        existente_xml = db.execute("SELECT id FROM xml_imports WHERE chave=? OR xml_hash=? LIMIT 1", (dados.get("chave") or "", xml_hash)).fetchone()
+        if not existente_xml:
+            db.execute("""INSERT INTO xml_imports
+                (chave, xml_hash, numero, serie, emissao, fornecedor_nome, fornecedor_cnpj, total, itens_qtd, observacao, xml_path, tipo)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (dados.get("chave") or xml_hash, xml_hash, dados.get("numero"), dados.get("serie"), dados.get("emissao"),
+                 dados.get("fornecedor_nome"), dados.get("fornecedor_cnpj"), dados.get("total") or 0, len(dados.get("itens") or []),
+                 "XML usado como origem de nota de devolução.", original_path, "Origem devolução"))
+            db.commit()
+
     motivo = request.form.get("motivo") or "Devolução por avaria"
     baixar_estoque = request.form.get("baixar_estoque") == "1"
     cfop_devolucao_padrao = (request.form.get("cfop_devolucao_padrao") or "").strip()
@@ -1705,6 +1798,7 @@ def salvar_devolucao():
             1 if baixar_estoque else 0, xml_hash, original_path, obs
         ))
         devolucao_id = cur.lastrowid
+        db.execute("UPDATE xml_imports SET devolucao_id=? WHERE xml_hash=? AND (devolucao_id IS NULL OR devolucao_id=0)", (devolucao_id, xml_hash))
         for idx, item in enumerate(dados["itens"], start=1):
             usar = request.form.get(f"usar_{idx}") == "1"
             if not usar:
@@ -1858,17 +1952,29 @@ def excluir_devolucao(devolucao_id):
 def relatorios():
     inicio = request.args.get("inicio") or date.today().replace(day=1).isoformat()
     fim = request.args.get("fim") or today_str()
-    vendas_periodo = fetch_one("SELECT COALESCE(SUM(total),0) total, COALESCE(SUM(lucro),0) lucro, COUNT(*) qtd FROM vendas WHERE data BETWEEN ? AND ?", (inicio, fim))
-    entradas = fetch_one("SELECT COALESCE(SUM(valor),0) v FROM financeiro WHERE tipo='Entrada' AND status='Pago' AND data BETWEEN ? AND ?", (inicio, fim))["v"]
-    saidas = fetch_one("SELECT COALESCE(SUM(valor),0) v FROM financeiro WHERE tipo='Saída' AND status='Pago' AND data BETWEEN ? AND ?", (inicio, fim))["v"]
-    mais_vendidos = fetch_all("""
-        SELECT produto_nome, SUM(quantidade) qtd, SUM(total) total
-        FROM venda_itens vi JOIN vendas v ON v.id=vi.venda_id
-        WHERE v.data BETWEEN ? AND ?
-        GROUP BY produto_nome ORDER BY qtd DESC LIMIT 20
-    """, (inicio, fim))
-    vendas = fetch_all("SELECT * FROM vendas WHERE data BETWEEN ? AND ? ORDER BY data DESC, id DESC", (inicio, fim))
-    return render_template("relatorios.html", **locals())
+
+    def carregar():
+        vendas_periodo = fetch_one("SELECT COALESCE(SUM(total),0) total, COALESCE(SUM(lucro),0) lucro, COUNT(*) qtd FROM vendas WHERE data BETWEEN ? AND ?", (inicio, fim))
+        entradas = fetch_one("SELECT COALESCE(SUM(valor),0) v FROM financeiro WHERE tipo='Entrada' AND status='Pago' AND data BETWEEN ? AND ?", (inicio, fim))["v"]
+        saidas = fetch_one("SELECT COALESCE(SUM(valor),0) v FROM financeiro WHERE tipo='Saída' AND status='Pago' AND data BETWEEN ? AND ?", (inicio, fim))["v"]
+        mais_vendidos = fetch_all("""
+            SELECT COALESCE(produto_nome,'Produto') produto_nome, COALESCE(SUM(quantidade),0) qtd, COALESCE(SUM(total),0) total
+            FROM venda_itens vi JOIN vendas v ON v.id=vi.venda_id
+            WHERE v.data BETWEEN ? AND ?
+            GROUP BY produto_nome ORDER BY qtd DESC LIMIT 20
+        """, (inicio, fim))
+        vendas = fetch_all("SELECT * FROM vendas WHERE data BETWEEN ? AND ? ORDER BY data DESC, id DESC", (inicio, fim))
+        return vendas_periodo, entradas, saidas, mais_vendidos, vendas
+
+    try:
+        vendas_periodo, entradas, saidas, mais_vendidos, vendas = carregar()
+    except sqlite3.OperationalError:
+        # Banco criado por uma versão antiga: aplica as migrações e tenta uma vez de novo.
+        init_db()
+        vendas_periodo, entradas, saidas, mais_vendidos, vendas = carregar()
+
+    return render_template("relatorios.html", inicio=inicio, fim=fim, vendas_periodo=vendas_periodo,
+                           entradas=entradas, saidas=saidas, mais_vendidos=mais_vendidos, vendas=vendas)
 
 @app.route("/backup")
 @login_required

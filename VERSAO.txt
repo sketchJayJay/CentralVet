@@ -1,7 +1,2 @@
-CENTRALVET Agropecuária
-Versão: SEFAZ direto / NF-e devolução
-Data: 2026-09-24
-Motor fiscal: NFePHP
-Intermediário mensal: nenhum
-
-Correção 2026-09-24: removida chamada obsoleta Make::monta(); geração via Make::getXML() compatível com sped-nfe 5.2.8.
+CENTRALVET Agropecuária - correção histórico XML/devoluções + relatórios + impressão térmica
+24/09/2026

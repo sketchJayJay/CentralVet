@@ -132,7 +132,15 @@ td{padding:12px 10px;border-bottom:1px solid #edf2f7;vertical-align:middle}
 /* Modo aplicativo instalado pelo Microsoft Edge / PWA */
 body.installed-app-mode{min-height:100vh;background:#07111f;}
 body.installed-app-mode .layout{min-height:100vh;}
-@media (display-mode: fullscreen), (display-mode: standalone){
+@media screen and (display-mode: fullscreen), screen and (display-mode: standalone){
   html,body{min-height:100%;background:#07111f;}
   .main{min-height:100vh;}
+}
+
+
+/* Correção final de impressão: impede PWA/viewport de alongar o papel térmico */
+@media print{
+  html,body,.layout,.main{height:auto!important;min-height:0!important;max-height:none!important;overflow:visible!important}
+  .main{margin:0!important;width:100%!important;padding:0!important}
+  .receipt{height:auto!important;min-height:0!important;margin:0!important;page-break-after:avoid!important;break-after:avoid-page!important}
 }
