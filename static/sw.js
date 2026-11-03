@@ -1,6 +1,7 @@
-const CACHE_NAME = 'centralvet-nfce-sefaz-pos5890u-v1';
+const CACHE_NAME = 'centralvet-mptii-usb-v2';
 const STATIC_ASSETS = [
   '/static/style.css',
+  '/static/impressora_mptii.js?v=20261103',
   '/static/centralvet_logo.png',
   '/static/icon-192.png',
   '/static/icon-512.png',

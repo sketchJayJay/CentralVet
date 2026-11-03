@@ -35,8 +35,16 @@
         </select>
         <small>Escolha a unidade. A quantidade fica no campo Estoque inicial.</small>
       </div>
-      <div><label>Preço custo</label><input name="preco_custo" placeholder="0,00"></div>
-      <div><label>Preço venda</label><input name="preco_venda" placeholder="0,00"></div>
+      <div><label>Preço custo</label><input id="preco_custo" name="preco_custo" inputmode="decimal" placeholder="0,00"></div>
+      <div>
+        <label>Margem sobre o custo (%)</label>
+        <input id="margem_lucro" name="margem_lucro" inputmode="decimal" placeholder="Ex.: 20">
+        <div class="margin-shortcuts" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:7px">
+          {% for m in [10,15,20,25,30,40,50] %}<button type="button" class="btn secondary margem-btn" data-margem="{{ m }}" style="padding:7px 10px">{{ m }}%</button>{% endfor %}
+        </div>
+        <small>Ex.: custo R$ 100 + 20% = venda R$ 120.</small>
+      </div>
+      <div><label>Preço venda</label><input id="preco_venda" name="preco_venda" inputmode="decimal" placeholder="0,00"><small>Calculado automaticamente, mas você pode ajustar manualmente.</small></div>
       <div><label>Estoque inicial</label><input name="estoque" inputmode="decimal" placeholder="Ex.: 10"></div>
       <div><label>Estoque mínimo</label><input name="estoque_minimo" inputmode="decimal" placeholder="Ex.: 2"></div>
       <div><label>Cód. barras/EAN</label><input name="ean"></div>
@@ -54,17 +62,47 @@
     <h2>Lista de produtos</h2>
     <form method="get" style="display:flex;gap:8px"><input name="q" value="{{ q }}" placeholder="Buscar produto"><button>Buscar</button></form>
   </div>
-  <div class="table-wrap"><table><thead><tr><th>Cód.</th><th>Produto</th><th>Estoque</th><th>Custo</th><th>Venda</th><th>Fiscal</th><th></th></tr></thead><tbody>
+  <div class="table-wrap"><table><thead><tr><th>Cód.</th><th>Produto</th><th>Estoque</th><th>Custo</th><th>Margem</th><th>Venda</th><th>Fiscal</th><th></th></tr></thead><tbody>
   {% for p in rows %}
   <tr>
     <td>{{ p.codigo }}</td><td><b>{{ p.nome }}</b><br><small>{{ p.categoria }}</small></td>
     <td><span class="pill {{ 'red' if p.estoque <= p.estoque_minimo else 'green' }}"><b>{{ p.estoque|num }}</b>&nbsp;{{ p.unidade or 'UN' }}</span></td>
-    <td>{{ p.preco_custo|money }}</td><td><b>{{ p.preco_venda|money }}</b></td>
+    <td>{{ p.preco_custo|money }}</td><td><b>{{ (p.margem_lucro or 0)|num }}%</b></td><td><b>{{ p.preco_venda|money }}</b></td>
     <td><small>EAN {{ p.ean or '-' }}<br>NCM {{ p.ncm or '-' }} • CEST {{ p.cest or '-' }}<br>CFOP {{ p.cfop or '-' }} • {{ p.cst_csosn or '-' }}</small></td>
     <td style="white-space:nowrap"><a class="btn secondary" href="{{ url_for('editar_produto', item_id=p.id) }}">Editar</a>
       <form method="post" action="{{ url_for('excluir_produto', item_id=p.id) }}" style="display:inline" onsubmit="return confirm('Excluir produto?')"><button class="danger">Excluir</button></form></td>
   </tr>
-  {% else %}<tr><td colspan="7">Nenhum produto cadastrado.</td></tr>{% endfor %}
+  {% else %}<tr><td colspan="8">Nenhum produto cadastrado.</td></tr>{% endfor %}
   </tbody></table></div>
 </div>
+<script>
+(function(){
+  const custo = document.getElementById('preco_custo');
+  const margem = document.getElementById('margem_lucro');
+  const venda = document.getElementById('preco_venda');
+  if (!custo || !margem || !venda) return;
+  function n(v){
+    v = String(v || '').trim().replace(/R\$/gi,'').replace(/\s/g,'');
+    if (!v) return 0;
+    if (v.includes(',')) v = v.replace(/\./g,'').replace(',','.');
+    return Number.parseFloat(v) || 0;
+  }
+  function br(v){ return (Math.round((v + Number.EPSILON) * 100) / 100).toFixed(2).replace('.', ','); }
+  function calcular(){
+    const c=n(custo.value), m=n(margem.value);
+    if(c >= 0 && m >= 0) venda.value = br(c * (1 + m/100));
+  }
+  custo.addEventListener('input', calcular);
+  margem.addEventListener('input', calcular);
+  document.querySelectorAll('.margem-btn').forEach(btn => btn.addEventListener('click', () => {
+    margem.value = btn.dataset.margem;
+    calcular();
+    margem.focus();
+  }));
+  venda.addEventListener('input', () => {
+    const c=n(custo.value), v=n(venda.value);
+    if(c > 0 && v >= 0) margem.value = ((v/c - 1) * 100).toFixed(2).replace('.', ',');
+  });
+})();
+</script>
 {% endblock %}

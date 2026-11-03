@@ -20,8 +20,16 @@
       </select>
       <small>Quantidade/estoque é preenchida separadamente abaixo.</small>
     </div>
-    <div><label>Preço custo</label><input name="preco_custo" value="{{ row.preco_custo }}"></div>
-    <div><label>Preço venda</label><input name="preco_venda" value="{{ row.preco_venda }}"></div>
+    <div><label>Preço custo</label><input id="preco_custo" name="preco_custo" inputmode="decimal" value="{{ row.preco_custo }}"></div>
+    <div>
+      <label>Margem sobre o custo (%)</label>
+      <input id="margem_lucro" name="margem_lucro" inputmode="decimal" value="{{ row.margem_lucro or 0 }}" placeholder="Ex.: 20">
+      <div class="margin-shortcuts" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:7px">
+        {% for m in [10,15,20,25,30,40,50] %}<button type="button" class="btn secondary margem-btn" data-margem="{{ m }}" style="padding:7px 10px">{{ m }}%</button>{% endfor %}
+      </div>
+      <small>Escolha a porcentagem e o preço de venda é calculado automaticamente.</small>
+    </div>
+    <div><label>Preço venda</label><input id="preco_venda" name="preco_venda" inputmode="decimal" value="{{ row.preco_venda }}"><small>Pode ajustar manualmente depois do cálculo.</small></div>
     <div><label>Estoque</label><input name="estoque" inputmode="decimal" value="{{ row.estoque }}"></div>
     <div><label>Estoque mínimo</label><input name="estoque_minimo" inputmode="decimal" value="{{ row.estoque_minimo }}"></div>
     <div><label>Cód. barras/EAN</label><input name="ean" value="{{ row.ean or '' }}"></div>
@@ -34,4 +42,34 @@
   <button class="green">Salvar alterações</button><a class="btn secondary" href="{{ url_for('produtos') }}">Voltar</a>
 </form>
 </div>
+<script>
+(function(){
+  const custo = document.getElementById('preco_custo');
+  const margem = document.getElementById('margem_lucro');
+  const venda = document.getElementById('preco_venda');
+  if (!custo || !margem || !venda) return;
+  function n(v){
+    v = String(v || '').trim().replace(/R\$/gi,'').replace(/\s/g,'');
+    if (!v) return 0;
+    if (v.includes(',')) v = v.replace(/\./g,'').replace(',','.');
+    return Number.parseFloat(v) || 0;
+  }
+  function br(v){ return (Math.round((v + Number.EPSILON) * 100) / 100).toFixed(2).replace('.', ','); }
+  function calcular(){
+    const c=n(custo.value), m=n(margem.value);
+    if(c >= 0 && m >= 0) venda.value = br(c * (1 + m/100));
+  }
+  custo.addEventListener('input', calcular);
+  margem.addEventListener('input', calcular);
+  document.querySelectorAll('.margem-btn').forEach(btn => btn.addEventListener('click', () => {
+    margem.value = btn.dataset.margem;
+    calcular();
+    margem.focus();
+  }));
+  venda.addEventListener('input', () => {
+    const c=n(custo.value), v=n(venda.value);
+    if(c > 0 && v >= 0) margem.value = ((v/c - 1) * 100).toFixed(2).replace('.', ',');
+  });
+})();
+</script>
 {% endblock %}

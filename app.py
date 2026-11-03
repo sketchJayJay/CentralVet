@@ -28,12 +28,10 @@ FISCAL_DIR = os.path.join(DATA_DIR, "fiscal")
 FISCAL_ORIGINAL_DIR = os.path.join(FISCAL_DIR, "originais")
 FISCAL_NFE_DIR = os.path.join(FISCAL_DIR, "nfe")
 FISCAL_NFCE_DIR = os.path.join(FISCAL_DIR, "nfce")
-FISCAL_CCE_DIR = os.path.join(FISCAL_DIR, "cce")
 os.makedirs(BACKUP_DIR, exist_ok=True)
 os.makedirs(FISCAL_ORIGINAL_DIR, exist_ok=True)
 os.makedirs(FISCAL_NFE_DIR, exist_ok=True)
 os.makedirs(FISCAL_NFCE_DIR, exist_ok=True)
-os.makedirs(FISCAL_CCE_DIR, exist_ok=True)
 
 # Segunda cópia de segurança em /app/certs.
 # No Coolify, /app/certs já precisa ser persistente para manter o A1; por isso
@@ -851,6 +849,7 @@ def init_db():
             unidade TEXT DEFAULT 'UN',
             preco_custo REAL DEFAULT 0,
             preco_venda REAL DEFAULT 0,
+            margem_lucro REAL DEFAULT 0,
             estoque REAL DEFAULT 0,
             estoque_minimo REAL DEFAULT 0,
             ncm TEXT,
@@ -1009,7 +1008,8 @@ def init_db():
              :csc_id, :csc_token, :cfop_padrao, :cst_csosn_padrao, :observacao)
         """, FISCAL_DEFAULTS)
         for column, ddl in [
-            ('ean', 'TEXT'), ('cest', 'TEXT'), ('ultima_chave_xml', 'TEXT'), ('fornecedor_id', 'INTEGER')
+            ('ean', 'TEXT'), ('cest', 'TEXT'), ('ultima_chave_xml', 'TEXT'), ('fornecedor_id', 'INTEGER'),
+            ('margem_lucro', 'REAL DEFAULT 0')
         ]:
             add_column(db, 'produtos', column, ddl)
         # Corrige cadastros antigos em que a quantidade foi digitada por engano no campo Unidade
@@ -1064,23 +1064,6 @@ def init_db():
             ('ambiente_emissao', 'TEXT'), ('baixar_estoque_solicitado', 'INTEGER DEFAULT 1'), ('emissao_tentativa_em', 'TEXT')
         ]:
             add_column(db, 'devolucoes', column, ddl)
-        db.execute("""
-            CREATE TABLE IF NOT EXISTS cartas_correcao (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                devolucao_id INTEGER NOT NULL,
-                chave_nfe TEXT NOT NULL,
-                sequencia INTEGER NOT NULL DEFAULT 1,
-                correcao TEXT NOT NULL,
-                status TEXT DEFAULT 'Pendente',
-                cstat TEXT,
-                motivo TEXT,
-                protocolo TEXT,
-                xml_path TEXT,
-                registrado_em TEXT,
-                created_at TEXT DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-        db.execute("CREATE INDEX IF NOT EXISTS idx_cce_devolucao ON cartas_correcao(devolucao_id, sequencia)")
         add_column(db, 'devolucao_itens', 'item_origem_idx', 'INTEGER')
         db.execute("""UPDATE fiscal_config SET
             logradouro=COALESCE(NULLIF(logradouro,''), :logradouro), numero=COALESCE(NULLIF(numero,''), :numero),
@@ -1525,8 +1508,8 @@ def produtos():
         with get_db() as db:
             db.execute("""
                 INSERT INTO produtos
-                (codigo,nome,categoria,unidade,preco_custo,preco_venda,estoque,estoque_minimo,ncm,cfop,cst_csosn,aliquota,ean,cest)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                (codigo,nome,categoria,unidade,preco_custo,preco_venda,margem_lucro,estoque,estoque_minimo,ncm,cfop,cst_csosn,aliquota,ean,cest)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             """, (
                 request.form.get("codigo","").strip(),
                 request.form.get("nome","").strip(),
@@ -1534,6 +1517,7 @@ def produtos():
                 normalizar_unidade(request.form.get("unidade", "UN")),
                 money_to_float(request.form.get("preco_custo")),
                 money_to_float(request.form.get("preco_venda")),
+                num_to_float(request.form.get("margem_lucro")),
                 num_to_float(request.form.get("estoque")),
                 num_to_float(request.form.get("estoque_minimo")),
                 request.form.get("ncm","").strip(),
@@ -1563,7 +1547,7 @@ def editar_produto(item_id):
         return redirect(url_for("produtos"))
     if request.method == "POST":
         exec_sql("""
-            UPDATE produtos SET codigo=?, nome=?, categoria=?, unidade=?, preco_custo=?, preco_venda=?,
+            UPDATE produtos SET codigo=?, nome=?, categoria=?, unidade=?, preco_custo=?, preco_venda=?, margem_lucro=?,
             estoque=?, estoque_minimo=?, ncm=?, cfop=?, cst_csosn=?, aliquota=?, ean=?, cest=? WHERE id=?
         """, (
             request.form.get("codigo","").strip(),
@@ -1572,6 +1556,7 @@ def editar_produto(item_id):
             normalizar_unidade(request.form.get("unidade", "UN")),
             money_to_float(request.form.get("preco_custo")),
             money_to_float(request.form.get("preco_venda")),
+            num_to_float(request.form.get("margem_lucro")),
             num_to_float(request.form.get("estoque")),
             num_to_float(request.form.get("estoque_minimo")),
             request.form.get("ncm","").strip(),
@@ -2062,6 +2047,7 @@ def build_pos5890u_escpos(venda, itens):
     return bytes(out)
 
 
+@app.route("/api/vendas/<int:venda_id>/termica")
 @app.route("/api/vendas/<int:venda_id>/pos5890u")
 @login_required
 def api_venda_pos5890u(venda_id):
@@ -2073,8 +2059,8 @@ def api_venda_pos5890u(venda_id):
     payload = build_nfce_pos5890u_escpos(xml_path) if xml_path else build_pos5890u_escpos(venda, itens)
     return jsonify({
         "ok": True,
-        "modelo": "POS-5890U",
-        "printer_hint": "POS-58",
+        "modelo": "MPT-II",
+        "printer_hint": "MPT-II / MobilePrinter",
         "paper_mm": 58,
         "dots": 384,
         "columns": 32,
@@ -2322,50 +2308,6 @@ def financeiro_excluir(item_id):
     flash("Lançamento excluído.", "ok")
     return redirect(url_for("financeiro"))
 
-
-def emitir_cce_sefaz_internal(devolucao_id, correcao):
-    cfg = fetch_one("SELECT * FROM fiscal_config WHERE id=1")
-    dev = fetch_one("SELECT * FROM devolucoes WHERE id=?", (devolucao_id,))
-    if not cfg or not dev:
-        return {"ok": False, "accepted": False, "error": "NF-e ou configuração fiscal não encontrada."}
-    if dev["status"] != "Autorizada SEFAZ":
-        return {"ok": False, "accepted": False, "error": "A Carta de Correção só pode ser enviada para NF-e já autorizada."}
-    chave = only_digits(dev["nf_devolucao_chave"] or "")
-    if len(chave) != 44:
-        return {"ok": False, "accepted": False, "error": "Chave da NF-e inválida ou ausente."}
-    texto = (correcao or "").strip()
-    if len(texto) < 15:
-        return {"ok": False, "accepted": False, "error": "Descreva a correção com pelo menos 15 caracteres."}
-    if len(texto) > 1000:
-        return {"ok": False, "accepted": False, "error": "A correção ultrapassa o limite de 1000 caracteres."}
-    row = fetch_one("SELECT COALESCE(MAX(sequencia),0) seq FROM cartas_correcao WHERE devolucao_id=? AND status='Registrada SEFAZ'", (devolucao_id,))
-    seq = int(row["seq"] or 0) + 1
-    outdir = os.path.join(FISCAL_CCE_DIR, str(devolucao_id))
-    os.makedirs(outdir, exist_ok=True)
-    payload = fiscal_engine_base_payload(cfg)
-    payload.update({
-        "action": "cce",
-        "chave": chave,
-        "correcao": texto,
-        "sequencia": seq,
-        "output_dir": outdir,
-    })
-    result = run_fiscal_engine(payload, timeout=90)
-    status = "Registrada SEFAZ" if result.get("accepted") else "Rejeitada SEFAZ"
-    with get_db() as db:
-        cur = db.execute("""
-            INSERT INTO cartas_correcao
-            (devolucao_id, chave_nfe, sequencia, correcao, status, cstat, motivo, protocolo, xml_path, registrado_em)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (devolucao_id, chave, seq, texto, status, str(result.get("cStat") or ""),
-              result.get("xMotivo") or result.get("error") or "", result.get("protocolo") or "",
-              result.get("xml_path") or "", result.get("registrado_em") or ""))
-        cce_id = cur.lastrowid
-        db.commit()
-    backup_db("carta-correcao")
-    result["cce_id"] = cce_id
-    result["sequencia"] = seq
-    return result
 
 # ---------------- Fiscal / XML ----------------
 
@@ -2636,18 +2578,20 @@ def importar_xml():
                     if aplicar_margem and margem > 0:
                         novo_preco_venda = custo * (1 + margem / 100.0)
                     db.execute("""
-                        UPDATE produtos SET nome=?, unidade=?, preco_custo=?, preco_venda=?, estoque=estoque+?,
+                        UPDATE produtos SET nome=?, unidade=?, preco_custo=?, preco_venda=?, margem_lucro=?, estoque=estoque+?,
                         ncm=?, cfop=?, cst_csosn=?, ean=?, cest=?, ultima_chave_xml=?, fornecedor_id=?
                         WHERE id=?
-                    """, (item["nome"], normalizar_unidade(item["unidade"]), custo, novo_preco_venda, qtd, item["ncm"], item["cfop"],
+                    """, (item["nome"], normalizar_unidade(item["unidade"]), custo, novo_preco_venda,
+                          margem if aplicar_margem and margem > 0 else (prod["margem_lucro"] or 0), qtd, item["ncm"], item["cfop"],
                           item["cst_csosn"], item["ean"], item["cest"], chave_unica, fornecedor_id, produto_id))
                     atualizados += 1
                 else:
                     preco_venda = custo * (1 + margem / 100.0) if aplicar_margem and margem > 0 else 0
                     cur = db.execute("""
-                        INSERT INTO produtos (codigo,nome,categoria,unidade,preco_custo,preco_venda,estoque,estoque_minimo,ncm,cfop,cst_csosn,ean,cest,ultima_chave_xml,fornecedor_id)
-                        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-                    """, (item["codigo"], item["nome"], "Importado XML", normalizar_unidade(item["unidade"]), custo, preco_venda, qtd, 0,
+                        INSERT INTO produtos (codigo,nome,categoria,unidade,preco_custo,preco_venda,margem_lucro,estoque,estoque_minimo,ncm,cfop,cst_csosn,ean,cest,ultima_chave_xml,fornecedor_id)
+                        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                    """, (item["codigo"], item["nome"], "Importado XML", normalizar_unidade(item["unidade"]), custo, preco_venda,
+                          margem if aplicar_margem and margem > 0 else 0, qtd, 0,
                           item["ncm"], item["cfop"], item["cst_csosn"], item["ean"], item["cest"], chave_unica, fornecedor_id))
                     produto_id = cur.lastrowid
                     novos += 1
@@ -2923,66 +2867,6 @@ def emitir_devolucao_sefaz(devolucao_id):
         flash(f"Falha antes do envio à SEFAZ: {result.get('error') or result.get('xMotivo') or 'Falha desconhecida'}", "erro")
     return redirect(url_for("ver_devolucao", devolucao_id=devolucao_id))
 
-
-@app.route("/cartas-correcao")
-@login_required
-def cartas_correcao():
-    notas = fetch_all("""
-        SELECT d.*,
-               (SELECT COUNT(*) FROM cartas_correcao c WHERE c.devolucao_id=d.id AND c.status='Registrada SEFAZ') AS qtd_cce
-        FROM devolucoes d
-        WHERE d.status='Autorizada SEFAZ'
-        ORDER BY d.id DESC
-    """)
-    return render_template("cartas_correcao.html", notas=notas)
-
-@app.route("/devolucoes/<int:devolucao_id>/carta-correcao", methods=["GET", "POST"])
-@login_required
-def carta_correcao(devolucao_id):
-    dev = fetch_one("SELECT * FROM devolucoes WHERE id=?", (devolucao_id,))
-    if not dev:
-        flash("NF-e não encontrada.", "erro")
-        return redirect(url_for("cartas_correcao"))
-    if dev["status"] != "Autorizada SEFAZ":
-        flash("A Carta de Correção só pode ser enviada para NF-e autorizada.", "erro")
-        return redirect(url_for("ver_devolucao", devolucao_id=devolucao_id))
-    anteriores = fetch_all("SELECT * FROM cartas_correcao WHERE devolucao_id=? ORDER BY sequencia DESC, id DESC", (devolucao_id,))
-    if request.method == "POST":
-        texto = (request.form.get("correcao") or "").strip()
-        result = emitir_cce_sefaz_internal(devolucao_id, texto)
-        if result.get("accepted"):
-            flash(f"Carta de Correção registrada na SEFAZ ✅ cStat {result.get('cStat')} - {result.get('xMotivo') or 'Evento registrado'}", "ok")
-            return redirect(url_for("carta_correcao", devolucao_id=devolucao_id))
-        if result.get("cStat"):
-            flash(f"CC-e não registrada. cStat {result.get('cStat')}: {result.get('xMotivo') or result.get('error') or 'Rejeitada'}", "erro")
-        else:
-            flash(f"Falha antes do envio da CC-e: {result.get('error') or 'Falha desconhecida'}", "erro")
-        return redirect(url_for("carta_correcao", devolucao_id=devolucao_id))
-    ultima = next((c for c in anteriores if c["status"] == "Registrada SEFAZ"), None)
-    texto_anterior = ultima["correcao"] if ultima else ""
-    return render_template("carta_correcao.html", dev=dev, anteriores=anteriores, texto_anterior=texto_anterior)
-
-@app.route("/cartas-correcao/<int:cce_id>/xml")
-@login_required
-def carta_correcao_xml(cce_id):
-    cce = fetch_one("SELECT * FROM cartas_correcao WHERE id=?", (cce_id,))
-    if not cce or cce["status"] != "Registrada SEFAZ":
-        flash("XML protocolado da CC-e não disponível.", "erro")
-        return redirect(url_for("cartas_correcao"))
-    path = fiscal_safe_file(cce["xml_path"])
-    if not path:
-        flash("Arquivo XML da CC-e não encontrado no armazenamento fiscal.", "erro")
-        return redirect(url_for("carta_correcao", devolucao_id=cce["devolucao_id"]))
-    return send_file(path, mimetype="application/xml", as_attachment=True, download_name=f"CCe-NFe-{cce['chave_nfe']}-seq{cce['sequencia']}.xml")
-
-@app.route("/cartas-correcao/<int:cce_id>/imprimir")
-@login_required
-def carta_correcao_imprimir(cce_id):
-    cce = fetch_one("SELECT * FROM cartas_correcao WHERE id=?", (cce_id,))
-    if not cce:
-        return "Carta de Correção não encontrada.", 404
-    dev = fetch_one("SELECT * FROM devolucoes WHERE id=?", (cce["devolucao_id"],))
-    return render_template("carta_correcao_imprimir.html", cce=cce, dev=dev)
 
 @app.route("/compartilhar/danfe/<token>")
 def danfe_devolucao_publico(token):

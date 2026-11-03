@@ -1,0 +1,20 @@
+CENTRALVET — MPT-II / MobilePrinter 58 mm via USB
+
+1. Atualize os arquivos do sistema e faça o redeploy no Coolify.
+2. No notebook do caixa, ligue a MPT-II e conecte um cabo USB de dados.
+3. Instale o driver Windows fornecido pelo fabricante/vendedor. A impressora precisa aparecer em Configurações > Impressoras e scanners.
+4. Instale ou mantenha aberto o QZ Tray: https://qz.io/download/
+5. Abra uma venda > Recibo > Conectar / atualizar impressoras. Autorize a conexão solicitada pelo QZ Tray.
+6. Selecione a fila da MPT-II. O nome pode ser MPT-II, MobilePrinter, POS-58 ou POS58. A lista mostra os nomes reais instalados no Windows.
+7. Clique em Imprimir teste. Confira se a linha de 32 dígitos saiu completa. Depois imprima o recibo ou a NFC-e autorizada.
+
+A seleção fica salva neste navegador e notebook. A escolha da antiga POS-5890U não é reaproveitada. Se existirem várias MPT-II, escolha a correta na lista.
+O envio usa ESC/POS em 58 mm, com 32 colunas e avanço curto de papel; sem comando de guilhotina. A confirmação na tela significa envio à fila, não confirmação de papel impresso.
+
+Se não imprimir: confira a fila/porta USB no Windows, o driver fornecido com a impressora, o cabo de dados e o QZ Tray aberto. Não baixe drivers de origem desconhecida.
+
+Atualização de código: mantenha os volumes persistentes e as variáveis atuais do Coolify. Este pacote não inclui banco de dados nem certificados do cliente. Não substitua os dados do servidor.
+
+Validação: revisão do template, sintaxe Python/JavaScript e simulação da seleção/envio. O teste físico deve ser feito no notebook conectado à MPT-II.
+
+Referências: manual MPT-II (https://fcc.report/FCC-ID/2autehmdr14001/6321919.pdf); QZ Tray (https://qz.io/docs/raw).

@@ -1,1 +1,17 @@
-CENTRALVET - Carta de Correção Eletrônica (CC-e) direta SEFAZ - 2026-09-24
+CENTRALVET Agropecuária
+Versão: margem automática por produto
+Data: 2026-09-25
+
+Alterações:
+- Campo Margem sobre o custo (%) no cadastro e edição de produtos.
+- Atalhos de 10%, 15%, 20%, 25%, 30%, 40% e 50%.
+- Preço de venda calculado automaticamente a partir do custo.
+- Preço de venda continua editável manualmente.
+- Ao alterar manualmente o preço de venda, a porcentagem é recalculada.
+- Margem salva no banco e exibida na lista de produtos.
+- Importação por XML passa a salvar a margem quando a opção automática for usada.
+
+Atualização 2026-11-03: MPT-II / MobilePrinter 58 mm por USB.
+- Seleção visual da impressora do Windows e preferência própria por notebook.
+- Botão de teste, bloqueio de envio duplicado e mensagens de instalação.
+- Mantidos os geradores de recibo e DANFE NFC-e em 58 mm.

@@ -1,3 +1,6 @@
+## Impressora atual: MPT-II / MobilePrinter 58 mm via USB
+Consulte LEIA-MPT-II-USB.txt. A seleção agora é feita na lista de impressoras do notebook; as instruções POS-5890U abaixo são históricas.
+
 # CENTRALVET Agropecuária — NF-e + NFC-e direto com SEFAZ/MG
 
 Esta versão inclui emissão de **NF-e modelo 55 de devolução diretamente na SEFAZ/MG**, sem provedor fiscal mensal.
@@ -159,3 +162,6 @@ O PDF 58 mm continua disponível apenas como reserva.
 - Logo também aparece na impressão direta do DANFE NFC-e pela POS-5890U.
 - Raster monocromático otimizado para 384 dots / bobina 58 mm.
 - PDF térmico de contingência também recebe a logo.
+
+## Margem automática por produto
+No cadastro/edição do produto, informe o preço de custo e a margem desejada. Exemplo: custo R$ 100,00 + margem 20% = venda R$ 120,00. Há atalhos de porcentagem e o preço final pode ser ajustado manualmente.
