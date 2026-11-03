@@ -1,19 +1,13 @@
-
 {% extends "base.html" %}
 {% block auth %}
-<div style="min-height:100vh;display:grid;place-items:center;padding:24px;background:radial-gradient(circle at top,#10395d,#07111f 55%,#030814)">
-  <form method="post" class="card dark login-card" style="width:min(500px,100%);padding:34px">
-    <div class="login-logo-wrap">
-      <img src="{{ url_for('static', filename='centralvet_logo.png') }}" alt="CENTRALVET Agropecuária">
-    </div>
-    <div class="brand-sub">Sistema Veltrix • Agropecuária</div>
-    <h1>Sistema de Gestão</h1>
-    <p style="color:#b9d7ee">Entre para acessar vendas, estoque, financeiro e fiscal.</p>
-    {% with messages=get_flashed_messages(with_categories=true) %}{% for cat,msg in messages %}<div class="flash {{cat}}">{{msg}}</div>{% endfor %}{% endwith %}
-    <label>Usuário</label><input name="usuario" placeholder="admin" autofocus>
-    <label style="margin-top:12px">Senha</label><input name="senha" type="password" placeholder="1234">
-    <button class="green" style="width:100%;margin-top:18px">Entrar</button>
-    <p style="color:#8fb4cc;font-size:13px;margin-top:16px">Usuário inicial: admin • Senha inicial: 1234. Você pode mudar pelas variáveis do Coolify.</p>
-  </form>
-</div>
+<main class="login-layout">
+<section class="login-story"><span class="eyebrow">CENTRALVET AGROPECUÁRIA</span><h1>Cuidar do campo.<br>Gerir com clareza.</h1><p>Uma gestão mais simples para o dia a dia<br>de quem movimenta a agropecuária.</p><div class="login-story-lines"><span>Vendas e atendimento</span><span>Estoque e produtos</span><span>Financeiro e emissão fiscal</span></div><div class="login-story-footer">TECNOLOGIA VELTRIX</div></section>
+<section class="login-form-area"><form method="post" class="login-card">
+<div class="login-logo-wrap"><img src="{{url_for('static',filename='centralvet_logo.png')}}" alt="CentralVet Agropecuária"></div>
+<span class="eyebrow muted">BEM-VINDO DE VOLTA</span><h2>Acesse sua gestão</h2><p>Entre com seus dados para continuar.</p>
+{% with messages=get_flashed_messages(with_categories=true) %}{% for cat,msg in messages %}<div class="flash {{cat}}">{{msg}}</div>{% endfor %}{% endwith %}
+<label for="login-user">Usuário</label><input id="login-user" name="usuario" placeholder="Seu usuário" autocomplete="username" required autofocus>
+<label for="login-password">Senha</label><div class="password-field"><input id="login-password" name="senha" type="password" placeholder="Sua senha" autocomplete="current-password" required><button type="button" class="password-toggle" onclick="const p=document.getElementById('login-password');p.type=p.type==='password'?'text':'password';this.textContent=p.type==='password'?'Mostrar':'Ocultar'">Mostrar</button></div>
+<button class="green login-submit" type="submit">Entrar no sistema {{icon('arrow')}}</button><div class="login-help">Gestão integrada · CentralVet Agropecuária</div>
+</form></section></main>
 {% endblock %}

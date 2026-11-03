@@ -1,6 +1,6 @@
-const CACHE_NAME = 'centralvet-mptii-usb-v2';
+const CACHE_NAME = 'centralvet-elegante-mptii-v3';
 const STATIC_ASSETS = [
-  '/static/style.css',
+  '/static/style.css?v=20261103-elegante',
   '/static/impressora_mptii.js?v=20261103',
   '/static/centralvet_logo.png',
   '/static/icon-192.png',

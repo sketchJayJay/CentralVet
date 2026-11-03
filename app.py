@@ -2953,7 +2953,7 @@ def relatorios():
         entradas = fetch_one("SELECT COALESCE(SUM(valor),0) v FROM financeiro WHERE tipo='Entrada' AND status='Pago' AND data BETWEEN ? AND ?", (inicio, fim))["v"]
         saidas = fetch_one("SELECT COALESCE(SUM(valor),0) v FROM financeiro WHERE tipo='Saída' AND status='Pago' AND data BETWEEN ? AND ?", (inicio, fim))["v"]
         mais_vendidos = fetch_all("""
-            SELECT COALESCE(produto_nome,'Produto') produto_nome, COALESCE(SUM(quantidade),0) qtd, COALESCE(SUM(total),0) total
+            SELECT COALESCE(vi.produto_nome,'Produto') produto_nome, COALESCE(SUM(vi.quantidade),0) qtd, COALESCE(SUM(vi.total),0) total
             FROM venda_itens vi JOIN vendas v ON v.id=vi.venda_id
             WHERE v.data BETWEEN ? AND ?
             GROUP BY produto_nome ORDER BY qtd DESC LIMIT 20

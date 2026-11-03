@@ -15,3 +15,10 @@ Atualização 2026-11-03: MPT-II / MobilePrinter 58 mm por USB.
 - Seleção visual da impressora do Windows e preferência própria por notebook.
 - Botão de teste, bloqueio de envio duplicado e mensagens de instalação.
 - Mantidos os geradores de recibo e DANFE NFC-e em 58 mm.
+
+Visual Elegante — 2026-11-03
+- Identidade verde-floresta e dourado da CentralVet.
+- Navegação agrupada, painel com indicadores e atalhos, login redesenhado.
+- Layout adaptável para celular, foco visível e contraste de formulários.
+- Impressão MPT-II USB mantida.
+- Correção do relatório de produtos mais vendidos (soma dos itens).

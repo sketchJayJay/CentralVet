@@ -1,68 +1,44 @@
-
 {% extends "base.html" %}
 {% block content %}
-<section class="hero hero-branded">
-  <div>
-    <span class="badge">CENTRALVET Agropecuária</span>
-    <h1>Painel geral</h1>
-    <p>Vendas, estoque, caixa, contas e pendências em uma única tela.</p>
-  </div>
-  <div class="hero-logo">
-    <img src="{{ url_for('static', filename='centralvet_logo.png') }}" alt="CENTRALVET Agropecuária">
-  </div>
-  <div class="actions">
-    <a class="btn green" href="{{ url_for('nova_venda') }}">+ Nova venda</a>
-    <a class="btn" href="{{ url_for('produtos') }}">+ Produto</a>
-    <a class="btn secondary" href="{{ url_for('estoque') }}">Entrada/Saída estoque</a>
-    <a class="btn secondary" href="{{ url_for('backup') }}">Baixar backup</a>
-  </div>
+<section class="dashboard-hero">
+  <div class="hero-content"><span class="eyebrow">SEU NEGÓCIO, BEM CUIDADO</span><h1>Uma visão clara.<br>Melhores decisões.</h1><p>Acompanhe sua agropecuária e tenha mais tempo<br class="desktop-break"> para o que faz o negócio crescer.</p><div class="actions"><a class="btn gold" href="{{url_for('nova_venda')}}">{{icon('plus')}} Iniciar uma venda</a><a class="hero-link" href="{{url_for('relatorios')}}">Ver relatórios {{icon('arrow')}}</a></div></div>
+  <div class="hero-art" aria-hidden="true"><div class="hero-art-ring"></div><img src="{{url_for('static',filename='centralvet_logo.png')}}" alt=""></div>
+  <div class="hero-caption">CENTRALVET <span>Agropecuária</span></div>
 </section>
-
-<div class="grid">
-  <div class="card metric"><div class="label">Produtos ativos</div><div class="value">{{ total_produtos }}</div></div>
-  <div class="card metric"><div class="label">Produtos em estoque baixo</div><div class="value warn">{{ baixo }}</div></div>
-  <div class="card metric"><div class="label">Valor em estoque</div><div class="value">{{ estoque_valor|money }}</div></div>
-  <div class="card metric"><div class="label">Vendas do mês</div><div class="value green">{{ vendas_mes|money }}</div></div>
-  <div class="card metric"><div class="label">Lucro do mês</div><div class="value green">{{ lucro_mes|money }}</div></div>
-  <div class="card metric"><div class="label">A receber</div><div class="value warn">{{ a_receber|money }}</div></div>
-  <div class="card metric"><div class="label">A pagar</div><div class="value warn">{{ a_pagar|money }}</div></div>
-  <div class="card metric"><div class="label">Caixa registrado</div><div class="value">{{ saldo_caixa|money }}</div></div>
+<div class="section-heading"><div><span class="eyebrow muted">RESULTADOS EM FOCO</span><h2>O negócio em números</h2></div><span class="period-chip">{{hoje|brdate}} · mês atual</span></div>
+<div class="grid dashboard-metrics">
+  {% for label,value,glyph,kind,endpoint,note in [
+    ('Vendas do mês',vendas_mes,'cart','emerald','vendas','Total vendido no mês'),
+    ('Lucro do mês',lucro_mes,'trend','golden','relatorios','Lucro registrado nas vendas'),
+    ('Caixa registrado',saldo_caixa,'wallet','blue','financeiro','Entradas menos saídas pagas'),
+    ('Valor em estoque',estoque_valor,'box','violet','estoque','Saldo de produtos ao custo')] %}
+  <a class="card metric metric-link" href="{{url_for(endpoint)}}"><div class="metric-top"><span class="label">{{label}}</span><span class="metric-icon {{kind}}">{{icon(glyph)}}</span></div><div class="value">{{value|money}}</div><div class="metric-note">{{note}} {{icon('arrow')}}</div></a>
+  {% endfor %}
 </div>
-
-<div class="grid2">
-  <div class="card">
-    <h2>Pendências automáticas</h2>
+<div class="overview-strip">
+  <a href="{{url_for('financeiro')}}"><span class="strip-icon emerald">{{icon('wallet')}}</span><div><span>A receber</span><strong>{{a_receber|money}}</strong></div>{{icon('arrow')}}</a>
+  <a href="{{url_for('financeiro')}}"><span class="strip-icon golden">{{icon('wallet')}}</span><div><span>A pagar</span><strong>{{a_pagar|money}}</strong></div>{{icon('arrow')}}</a>
+  <a href="{{url_for('produtos')}}"><span class="strip-icon blue">{{icon('box')}}</span><div><span>Produtos ativos</span><strong>{{total_produtos}}</strong></div>{{icon('arrow')}}</a>
+  <a href="{{url_for('estoque')}}"><span class="strip-icon {{'rose' if baixo else 'emerald'}}">{{icon('alert' if baixo else 'check')}}</span><div><span>Estoque baixo</span><strong>{{baixo}} <small>produto(s)</small></strong></div>{{icon('arrow')}}</a>
+</div>
+<div class="grid2 dashboard-details">
+  <section class="card attention-card"><div class="card-heading"><div><span class="eyebrow muted">ACOMPANHAMENTO</span><h2>Precisa da sua atenção</h2></div><span class="count-chip">{{pendencias|length}}</span></div>
     {% if pendencias %}
-      {% for p in pendencias %}<p><span class="pill warn">{{ p }}</span></p>{% endfor %}
-    {% else %}
-      <p>Tudo certo por enquanto. Nenhum alerta importante.</p>
-    {% endif %}
-  </div>
-  <div class="card">
-    <h2>Estoque baixo</h2>
-    <table><thead><tr><th>Produto</th><th>Estoque</th><th>Mínimo</th></tr></thead><tbody>
-    {% for p in estoque_baixo %}
-      <tr><td>{{ p.nome }}</td><td>{{ p.estoque|num }} {{ p.unidade }}</td><td>{{ p.estoque_minimo|num }}</td></tr>
-    {% else %}<tr><td colspan="3">Nenhum produto em alerta.</td></tr>{% endfor %}
-    </tbody></table>
-  </div>
+    {% for p in pendencias %}<div class="attention-row"><span class="attention-mark">{{icon('alert')}}</span><span>{{p}}</span></div>{% endfor %}
+    <a class="text-link" href="{{url_for('financeiro')}}">Acompanhar financeiro {{icon('arrow')}}</a>
+    {% else %}<div class="empty-state"><span class="empty-icon">{{icon('check')}}</span><b>Tudo em dia por aqui</b><p>Nenhuma pendência identificada no painel.</p></div>{% endif %}
+  </section>
+  <section class="card"><div class="card-heading"><div><span class="eyebrow muted">REPOSIÇÃO</span><h2>Estoque em atenção</h2></div><a class="text-link" href="{{url_for('estoque')}}">Ver estoque {{icon('arrow')}}</a></div>
+    <div class="table-wrap"><table><thead><tr><th>Produto</th><th>Disponível</th><th>Mínimo</th></tr></thead><tbody>
+    {% for p in estoque_baixo %}<tr><td class="product-name">{{p.nome}}</td><td><span class="pill warn">{{p.estoque|num}} {{p.unidade}}</span></td><td>{{p.estoque_minimo|num}}</td></tr>
+    {% else %}<tr><td colspan="3"><div class="empty-state compact">{{icon('box')}}<b>Nenhum produto em alerta</b><p>Os níveis de estoque estão acima do mínimo.</p></div></td></tr>{% endfor %}
+    </tbody></table></div>
+  </section>
 </div>
-
-<div class="card">
-  <h2>Últimas vendas</h2>
-  <table>
-    <thead><tr><th>Data</th><th>Cliente</th><th>Total</th><th>Status</th><th>Fiscal</th><th></th></tr></thead>
-    <tbody>
-    {% for v in ult_vendas %}
-      <tr>
-        <td>{{ v.data|brdate }}</td><td>{{ v.cliente_nome or 'Consumidor' }}</td>
-        <td><b>{{ v.total|money }}</b></td>
-        <td><span class="pill {{ 'green' if v.status=='Pago' else 'warn' }}">{{ v.status }}</span></td>
-        <td>{{ v.nf_status }}</td>
-        <td><a class="btn secondary" href="{{ url_for('recibo_venda', venda_id=v.id) }}">Recibo</a></td>
-      </tr>
-    {% else %}<tr><td colspan="6">Nenhuma venda lançada ainda.</td></tr>{% endfor %}
-    </tbody>
-  </table>
-</div>
+<section class="card recent-sales"><div class="card-heading"><div><span class="eyebrow muted">MOVIMENTO DA LOJA</span><h2>Últimas vendas</h2></div><a class="btn secondary small" href="{{url_for('vendas')}}">Todas as vendas {{icon('arrow')}}</a></div>
+<div class="table-wrap"><table><thead><tr><th>Venda / Data</th><th>Cliente</th><th>Total</th><th>Pagamento</th><th>Situação fiscal</th><th></th></tr></thead><tbody>
+{% for v in ult_vendas %}<tr><td><b>#{{v.id}}</b><small class="cell-sub">{{v.data|brdate}}</small></td><td><span class="customer-avatar">{{(v.cliente_nome or 'C')[:1]|upper}}</span>{{v.cliente_nome or 'Consumidor'}}</td><td class="money-cell">{{v.total|money}}</td><td><span class="pill {{'green' if v.status=='Pago' else 'warn'}}">{{v.status}}</span></td><td><span class="fiscal-status">{{v.nf_status}}</span></td><td><a class="btn secondary small" href="{{url_for('recibo_venda',venda_id=v.id)}}">Recibo {{icon('arrow')}}</a></td></tr>
+{% else %}<tr><td colspan="6"><div class="empty-state"><span class="empty-icon">{{icon('cart')}}</span><b>As próximas vendas começam aqui</b><p>Suas vendas mais recentes aparecerão nesta lista.</p><a class="text-link" href="{{url_for('nova_venda')}}">Registrar primeira venda {{icon('arrow')}}</a></div></td></tr>{% endfor %}
+</tbody></table></div></section>
+<footer class="page-footer">CENTRALVET Agropecuária <span>Gestão que acompanha o seu negócio. · Veltrix</span></footer>
 {% endblock %}

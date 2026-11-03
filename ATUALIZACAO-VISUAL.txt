@@ -1,0 +1,16 @@
+CENTRALVET — VISUAL ELEGANTE
+
+Visual em verde-floresta, dourado e fundo claro, inspirado na marca CentralVet.
+Menu organizado por área; painel com indicadores reais, atalhos e alertas; login renovado; adaptação para notebook e celular.
+Impressão MPT-II 58 mm USB preservada, com seleção de impressora e botão de teste.
+Também corrigida uma soma ambígua no relatório de produtos mais vendidos.
+
+COMO ATUALIZAR
+Atualize os arquivos de código no repositório e faça o redeploy no Coolify.
+Mantenha os mesmos volumes, nomes de volumes e variáveis já usados pela aplicação.
+Os destinos que acabamos de ajustar são /app/data e /app/certs. Não recrie nem renomeie esses volumes.
+Baixe um backup atualizado pelo sistema antes de instalar a atualização.
+Depois do deploy, recarregue o navegador para receber o novo visual e confira as últimas vendas.
+
+O pacote não inclui banco de dados, dados de demonstração nem certificado A1 do cliente.
+As imagens de prévia usam dados ilustrativos criados apenas no ambiente de testes.

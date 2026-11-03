@@ -4,9 +4,9 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>{{ title or app_name or "CENTRALVET" }}</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=20261103-elegante">
   <link rel="manifest" href="{{ url_for('manifest_json') }}">
-  <meta name="theme-color" content="#07111f">
+  <meta name="theme-color" content="#123d33">
   <meta name="application-name" content="CENTRALVET">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
@@ -15,44 +15,74 @@
   <link rel="icon" type="image/png" sizes="192x192" href="{{ url_for('static', filename='icon-192.png') }}">
   <link rel="apple-touch-icon" href="{{ url_for('static', filename='icon-192.png') }}">
 </head>
+{% macro icon(name) -%}<svg class="ui-icon" aria-hidden="true"><use href="#i-{{name}}"></use></svg>{%- endmacro %}
 <body>
+<svg xmlns="http://www.w3.org/2000/svg" style="display:none" aria-hidden="true"><defs>
+<symbol id="i-grid" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></symbol>
+<symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+<symbol id="i-cart" viewBox="0 0 24 24"><path d="M3 4h2l2.5 12H19l2-9H6M9 20h.01M18 20h.01"/><circle cx="9" cy="20" r="1"/><circle cx="18" cy="20" r="1"/></symbol>
+<symbol id="i-box" viewBox="0 0 24 24"><path d="m12 3 9 5v9l-9 5-9-5V8l9-5Zm0 10 9-5M12 13 3 8m9 5v9M7.5 5.5l9 5"/></symbol>
+<symbol id="i-stock" viewBox="0 0 24 24"><path d="M4 21V5l8-3 8 3v16M2 21h20M8 21V10h8v11M8 14h8M8 18h8"/></symbol>
+<symbol id="i-file" viewBox="0 0 24 24"><path d="M14 2H5v20h14V7l-5-5Zm0 0v6h5M8 12h8M8 16h8"/></symbol>
+<symbol id="i-users" viewBox="0 0 24 24"><circle cx="9" cy="7" r="4"/><path d="M2 21v-3a7 7 0 0 1 14 0v3M17 4a4 4 0 0 1 0 8m2 3a6 6 0 0 1 3 6"/></symbol>
+<symbol id="i-wallet" viewBox="0 0 24 24"><path d="M20 8V5H5a3 3 0 0 0 0 6h16v9H5a3 3 0 0 1-3-3V8M21 12h-6v5h6"/><path d="M17 14.5h.01"/></symbol>
+<symbol id="i-return" viewBox="0 0 24 24"><path d="m8 4-6 6 6 6M2 10h12a7 7 0 0 1 0 14"/></symbol>
+<symbol id="i-chart" viewBox="0 0 24 24"><path d="M3 3v18h18M7 16v-5m5 5V7m5 9V4"/></symbol>
+<symbol id="i-shield" viewBox="0 0 24 24"><path d="m12 2 9 4v6c0 5-9 10-9 10S3 17 3 12V6l9-4Z"/><path d="m8 12 3 3 5-6"/></symbol>
+<symbol id="i-exit" viewBox="0 0 24 24"><path d="M9 3H3v18h6M9 12h13m-5-5 5 5-5 5"/></symbol>
+<symbol id="i-arrow" viewBox="0 0 24 24"><path d="M4 12h16m-6-6 6 6-6 6"/></symbol>
+<symbol id="i-trend" viewBox="0 0 24 24"><path d="m3 17 6-6 4 4 8-10m-6 0h6v6"/></symbol>
+<symbol id="i-alert" viewBox="0 0 24 24"><path d="m12 3 10 18H2L12 3Zm0 6v5m0 3h.01"/></symbol>
+<symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></symbol>
+<symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></symbol>
+</defs></svg>
 {% if session.get('logged') %}
 <div class="mobile-topbar hide-print">
   <div class="topbar-brand">
     <img src="{{ url_for('static', filename='centralvet_logo.png') }}" alt="CENTRALVET Agropecuária">
     <div>
       <div class="title">CENTRALVET</div>
-      <div class="subtitle">Sistema móvel</div>
+      <div class="subtitle">Gestão agropecuária</div>
     </div>
   </div>
-  <button type="button" class="menu-toggle" onclick="toggleMenu()">☰</button>
+  <button type="button" class="menu-toggle" onclick="toggleMenu()" aria-label="Abrir menu" aria-controls="sidebarMenu" aria-expanded="false">{{icon("menu")}}</button>
 </div>
 <div class="mobile-backdrop hide-print" onclick="closeMenu()"></div>
 <div class="layout">
   <aside class="side" id="sidebarMenu">
-    <div class="client-logo-box">
+    <a class="client-logo-box" href="{{url_for('index')}}" aria-label="CentralVet — painel geral">
       <img src="{{ url_for('static', filename='centralvet_logo.png') }}" alt="CENTRALVET Agropecuária">
-    </div>
-    <div class="powered">Sistema por <b>VEL<span>TRIX</span></b></div>
-    <div class="company"><b>CENTRALVET</b><br><small>Agropecuária • Gestão e emissão fiscal</small></div>
-    <nav class="menu">
-      <a href="{{ url_for('index') }}">Painel geral</a>
-      <a href="{{ url_for('nova_venda') }}">Venda rápida</a>
-      <a href="{{ url_for('vendas') }}">Vendas</a>
-      <a href="{{ url_for('produtos') }}">Produtos</a>
-      <a href="{{ url_for('estoque') }}">Estoque</a>
-      <a href="{{ url_for('importar_xml') }}">Importar XML</a>
-      <a href="{{ url_for('clientes') }}">Clientes</a>
-      <a href="{{ url_for('fornecedores') }}">Fornecedores</a>
-      <a href="{{ url_for('financeiro') }}">Financeiro</a>
-      <a href="{{ url_for('fiscal') }}">Fiscal NF-e/NFC-e</a>
-      <a href="{{ url_for('devolucoes') }}">Devoluções</a>
-      <a href="{{ url_for('relatorios') }}">Relatórios</a>
-      <a href="{{ url_for('backups') }}">Backups</a>
-      <a href="{{ url_for('logout') }}">Sair</a>
+    </a>
+    <div class="workspace-label"><span></span> GESTÃO AGROPECUÁRIA</div>
+    {% set section = {'recibo_venda':'vendas','editar_produto':'produtos','editar_cliente':'clientes','editar_fornecedor':'fornecedores','devolucao_form':'devolucoes','nova_devolucao':'devolucoes','devolucao_detalhe':'devolucoes','certificado_upload':'fiscal'}.get(request.endpoint, request.endpoint) %}
+    {% macro navitem(endpoint, label, glyph) %}
+      <a href="{{url_for(endpoint)}}" class="{{'active' if section == endpoint else ''}}" {% if section == endpoint %}aria-current="page"{% endif %}>{{icon(glyph)}}<span>{{label}}</span>{% if section == endpoint %}<i class="nav-dot"></i>{% endif %}</a>
+    {% endmacro %}
+    <a class="sidebar-sale" href="{{url_for('nova_venda')}}">{{icon('plus')}} Nova venda</a>
+    <nav class="menu" aria-label="Menu principal">
+      <div class="menu-label">VISÃO DO NEGÓCIO</div>
+      {{navitem('index','Painel geral','grid')}}
+      {{navitem('vendas','Vendas','cart')}}
+      {{navitem('financeiro','Financeiro','wallet')}}
+      <div class="menu-label">OPERAÇÃO</div>
+      {{navitem('produtos','Produtos','box')}}
+      {{navitem('estoque','Estoque','stock')}}
+      {{navitem('clientes','Clientes','users')}}
+      {{navitem('fornecedores','Fornecedores','users')}}
+      <div class="menu-label">FISCAL E CONTROLE</div>
+      {{navitem('importar_xml','Importar XML','file')}}
+      {{navitem('fiscal','Fiscal NF-e / NFC-e','shield')}}
+      {{navitem('devolucoes','Devoluções','return')}}
+      {{navitem('relatorios','Relatórios','chart')}}
+      {{navitem('backups','Backups','shield')}}
     </nav>
+    <div class="sidebar-footer"><div class="powered">Tecnologia <b>VELTRIX</b></div><a href="{{url_for('logout')}}">{{icon('exit')}} Sair do sistema</a></div>
   </aside>
   <main class="main">
+    <header class="workspace-topbar hide-print">
+      <div><span class="workspace-overline">CENTRALVET AGROPECUÁRIA</span><div class="workspace-breadcrumb">Gestão <span>/</span> {{ {'index':'Painel geral','nova_venda':'Nova venda','vendas':'Vendas','produtos':'Produtos','estoque':'Estoque','clientes':'Clientes','fornecedores':'Fornecedores','financeiro':'Financeiro','fiscal':'Fiscal','importar_xml':'Importar XML','devolucoes':'Devoluções','relatorios':'Relatórios','backups':'Backups'}.get(request.endpoint, 'Detalhes') }}</div></div>
+      <div class="workspace-user"><div class="date-display" id="workspaceDate"></div><span class="user-avatar">{{(session.get('user') or 'A')[:1]|upper}}</span><div><b>{{session.get('user') or 'Administrador'}}</b><small>Área de gestão</small></div></div>
+    </header>
     {% with messages = get_flashed_messages(with_categories=true) %}
       {% if messages %}
         {% for cat,msg in messages %}<div class="flash {{cat}}">{{ msg }}</div>{% endfor %}
@@ -61,11 +91,10 @@
     {% block content %}{% endblock %}
   </main>
 </div>
-<nav class="mobile-quicknav hide-print">
-  <a href="{{ url_for('index') }}">Painel</a>
-  <a href="{{ url_for('nova_venda') }}">Venda</a>
-  <a href="{{ url_for('produtos') }}">Produtos</a>
-  <a href="{{ url_for('importar_xml') }}">XML</a>
+<nav class="mobile-quicknav hide-print" aria-label="Atalhos">
+  {% for ep,label,glyph in [('index','Painel','grid'),('nova_venda','Venda','plus'),('produtos','Produtos','box'),('financeiro','Financeiro','wallet')] %}
+  <a href="{{url_for(ep)}}" class="{{'active' if request.endpoint == ep else ''}}">{{icon(glyph)}}{{label}}</a>
+  {% endfor %}
 </nav>
 {% else %}
   {% block auth %}{% endblock %}
@@ -80,8 +109,9 @@ function filterTable(inputId, tableId){
     tr.style.display = tr.innerText.toLowerCase().includes(q) ? '' : 'none';
   });
 }
-function toggleMenu(){ document.body.classList.toggle('menu-open'); }
-function closeMenu(){ document.body.classList.remove('menu-open'); }
+function toggleMenu(){ document.body.classList.toggle('menu-open'); document.querySelector('.menu-toggle')?.setAttribute('aria-expanded', document.body.classList.contains('menu-open')); }
+function closeMenu(){ document.body.classList.remove('menu-open'); document.querySelector('.menu-toggle')?.setAttribute('aria-expanded','false'); }
+document.addEventListener('keydown', e => { if(e.key === 'Escape') closeMenu(); });
 window.addEventListener('resize', ()=>{ if(window.innerWidth > 900) closeMenu(); });
 document.addEventListener('click', function(e){
   if(window.innerWidth <= 900 && e.target.closest('.menu a')) closeMenu();
@@ -99,6 +129,21 @@ function isInstalledApp(){
 
 document.addEventListener('DOMContentLoaded', function(){
   if(isInstalledApp()) document.body.classList.add('installed-app-mode');
+  const dateEl = document.getElementById('workspaceDate');
+  if(dateEl) dateEl.textContent = new Date().toLocaleDateString('pt-BR', {day:'2-digit',month:'long',year:'numeric',timeZone:'America/Sao_Paulo'});
+  document.querySelectorAll('.card table').forEach(table => {
+    if (!table.closest('.table-wrap') && !table.closest('.receipt')) {
+      const wrap = document.createElement('div'); wrap.className = 'table-wrap';
+      table.parentNode.insertBefore(wrap, table); wrap.appendChild(table);
+    }
+  });
+  document.querySelectorAll('label:not([for])').forEach(label => {
+    const field = label.nextElementSibling;
+    if(field && /^(INPUT|SELECT|TEXTAREA)$/.test(field.tagName)) {
+      if(!field.id) field.id = 'field-' + Math.random().toString(36).slice(2);
+      label.htmlFor = field.id;
+    }
+  });
 });
 </script>
 {% block scripts %}{% endblock %}
