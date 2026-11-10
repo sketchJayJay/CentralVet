@@ -1,6 +1,6 @@
-const CACHE_NAME = 'centralvet-elegante-mptii-v3';
+const CACHE_NAME = 'centralvet-financeiro-v4';
 const STATIC_ASSETS = [
-  '/static/style.css?v=20261103-elegante',
+  '/static/style.css?v=20261110-financeiro',
   '/static/impressora_mptii.js?v=20261103',
   '/static/centralvet_logo.png',
   '/static/icon-192.png',

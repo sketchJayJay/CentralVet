@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% set receber = row.tipo=='Entrada' %}
+{% block content %}
+<section class="hero finance-hero">
+  <span class="badge">Conta a {{ 'receber' if receber else 'pagar' }} · #{{ row.id }}</span>
+  <h1>{{ row.descricao }}</h1><p>{{ row.nome_exibicao }}{% if row.documento_exibicao %} · {{ row.documento_exibicao }}{% endif %}</p>
+  <div class="actions">
+    <a class="btn secondary" href="{{ url_for('contas_receber' if receber else 'contas_pagar') }}">Voltar</a>
+    <a class="btn secondary" href="{{ url_for('editar_conta',item_id=row.id) }}">Editar conta</a>
+    {% if row.cliente_id %}<a class="btn secondary" href="{{ url_for('crediario_cliente',cliente_id=row.cliente_id) }}">Ficha do cliente</a>{% endif %}
+    {% if row.referencia_tipo=='Venda' %}<a class="btn secondary" href="{{ url_for('recibo_venda',venda_id=row.referencia_id) }}">Ver venda / recibo</a>{% endif %}
+  </div>
+</section>
+<div class="grid finance-metrics">
+  <div class="card metric"><div class="label">Valor original</div><div class="value">{{ row.valor|money }}</div></div>
+  <div class="card metric"><div class="label">{{ 'Recebido' if receber else 'Pago' }}</div><div class="value green">{{ row.baixado|money }}</div></div>
+  <div class="card metric"><div class="label">Saldo em aberto</div><div class="value {{ 'finance-overdue' if row.vencida }}">{{ row.saldo|money }}</div></div>
+  <div class="card metric"><div class="label">Vencimento</div><div class="finance-due-date">{{ row.vencimento|brdate if row.vencimento else 'Não informado' }}</div><span class="pill {{ 'green' if row.status=='Pago' else ('red' if row.vencida else 'warn') }}">{{ 'Quitada' if row.status=='Pago' else ('Vencida · ' ~ row.status if row.vencida else row.status) }}</span></div>
+</div>
+<div class="grid2 finance-detail-grid">
+  {% if row.saldo_centavos %}
+  <section class="card">
+    <h2>{{ 'Registrar recebimento' if receber else 'Registrar pagamento' }}</h2>
+    <p class="finance-help">Pode registrar o valor total ou somente uma parte. O restante continua em aberto.</p>
+    <form method="post" action="{{ url_for('financeiro_pagar',item_id=row.id) }}" data-single-submit>
+      <input type="hidden" name="csrf_token" value="{{ financeiro_csrf }}">
+      <input type="hidden" name="token" value="{{ financeiro_token() }}">
+      <div class="row">
+        <div><label>Valor {{ 'recebido' if receber else 'pago' }} (R$)</label><input name="valor" inputmode="decimal" value="{{ row.saldo|num }}" required></div>
+        <div><label>Data {{ 'do recebimento' if receber else 'do pagamento' }}</label><input type="date" name="data" value="{{ hoje }}" max="{{ hoje }}" required></div>
+        <div><label>Forma de pagamento</label><select name="forma">{% for f in formas_financeiras %}<option {{ 'selected' if f==row.forma }}>{{ f }}</option>{% endfor %}</select></div>
+        <div><label>Observação</label><input name="observacao" placeholder="Opcional"></div>
+      </div><button class="green">{{ 'Registrar recebimento' if receber else 'Registrar pagamento' }}</button>
+    </form>
+  </section>
+  {% else %}
+  <section class="card"><div class="empty-state"><span class="pill green">Quitada</span><h2>Esta conta está em dia.</h2><p>Todos os pagamentos estão registrados no histórico abaixo.</p></div></section>
+  {% endif %}
+  <section class="card finance-account-info">
+    <h2>Dados da conta</h2><dl>
+      <dt>{{ 'Cliente' if receber else 'Fornecedor / Pessoa' }}</dt><dd>{{ row.nome_exibicao }}</dd>
+      <dt>CPF/CNPJ</dt><dd>{{ row.documento_exibicao or 'Não informado' }}</dd>
+      <dt>Data do lançamento</dt><dd>{{ row.data|brdate }}</dd>
+      {% if row.documento %}<dt>Número do boleto / documento</dt><dd>{{ row.documento }}</dd>{% endif %}
+      {% if row.codigo_barras %}<dt>Linha digitável / código de barras</dt><dd class="finance-barcode">{{ row.codigo_barras }}</dd>{% endif %}
+      {% if row.observacao %}<dt>Observações</dt><dd>{{ row.observacao }}</dd>{% endif %}
+    </dl>
+  </section>
+</div>
+<section class="card">
+  <h2>Histórico de {{ 'recebimentos' if receber else 'pagamentos' }}</h2>
+  <table><thead><tr><th>Data</th><th>Valor</th><th>Forma</th><th>Observação</th><th>Situação</th><th></th></tr></thead><tbody>
+    {% for b in baixas %}<tr><td>{{ b.data|brdate }}</td><td><b>{{ (b.valor_centavos/100)|money }}</b></td><td>{{ b.forma }}</td><td>{{ b.observacao or '—' }}</td><td><span class="pill {{ 'red' if b.estornado_em else 'green' }}">{{ 'Estornado' if b.estornado_em else 'Confirmado' }}</span></td><td>{% if not b.estornado_em %}<form method="post" action="{{ url_for('estornar_baixa',item_id=row.id,baixa_id=b.id) }}" onsubmit="return confirm('Estornar este pagamento? O valor voltará ao saldo em aberto.');"><input type="hidden" name="csrf_token" value="{{ financeiro_csrf }}"><button class="btn danger small">Estornar</button></form>{% endif %}</td></tr>
+    {% else %}<tr><td colspan="6">Nenhum pagamento registrado.</td></tr>{% endfor %}
+  </tbody></table>
+</section>
+{% if row.referencia_tipo!='Venda' and not baixas %}
+<div class="finance-delete hide-print"><form method="post" action="{{ url_for('financeiro_excluir',item_id=row.id) }}" onsubmit="return confirm('Excluir esta conta sem pagamentos?');"><input type="hidden" name="csrf_token" value="{{ financeiro_csrf }}"><button class="btn danger">Excluir conta</button></form></div>
+{% endif %}
+{% endblock %}

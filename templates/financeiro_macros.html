@@ -1,0 +1,28 @@
+{% macro abas() %}
+<nav class="finance-tabs hide-print" aria-label="Áreas do financeiro">
+  <a href="{{ url_for('financeiro') }}" class="{{ 'active' if request.endpoint=='financeiro' }}">Visão geral</a>
+  <a href="{{ url_for('contas_pagar') }}" class="{{ 'active' if request.endpoint=='contas_pagar' }}">Contas a pagar</a>
+  <a href="{{ url_for('contas_receber') }}" class="{{ 'active' if request.endpoint in ['contas_receber','crediario_cliente'] }}">Contas a receber</a>
+</nav>
+{% endmacro %}
+
+{% macro tabela_contas(rows,tipo='',misto=False) %}
+<table class="finance-table">
+  <thead><tr><th>Vencimento</th><th>{{ 'Fornecedor / Despesa' if tipo=='Saída' else 'Cliente / Conta' }}</th><th>Valor original</th><th>{{ 'Pago' if tipo=='Saída' else 'Recebido' }}</th><th>Em aberto</th><th>Situação</th><th></th></tr></thead>
+  <tbody>
+  {% for r in rows %}
+  <tr>
+    <td data-label="Vencimento"><b>{{ r.vencimento|brdate if r.vencimento else 'Não informado' }}</b>{% if r.vencida %}<small class="cell-sub finance-overdue">Vencida</small>{% elif r.vence_hoje %}<small class="cell-sub finance-due">Vence hoje</small>{% endif %}</td>
+    <td data-label="{{ 'Fornecedor' if tipo=='Saída' else 'Cliente' }}"><b>{{ r.nome_exibicao }}</b><small class="cell-sub">{{ r.descricao }}</small>{% if r.documento_exibicao %}<small class="cell-sub">{{ r.documento_exibicao }}</small>{% endif %}{% if misto %}<span class="pill">{{ 'A receber' if r.tipo=='Entrada' else 'A pagar' }}</span>{% endif %}</td>
+    <td data-label="Valor original">{{ r.valor|money }}</td>
+    <td data-label="Já baixado">{{ r.baixado|money }}</td>
+    <td data-label="Em aberto" class="money-cell"><b>{{ r.saldo|money }}</b></td>
+    <td data-label="Situação"><span class="pill {{ 'green' if r.status=='Pago' else ('red' if r.vencida else 'warn') }}">{{ 'Quitada' if r.status=='Pago' else r.status }}</span></td>
+    <td class="finance-row-actions"><a class="btn secondary small" href="{{ url_for('ver_conta',item_id=r.id) }}">{{ 'Ver conta' if r.status=='Pago' else ('Pagar' if r.tipo=='Saída' else 'Receber') }}</a></td>
+  </tr>
+  {% else %}
+  <tr><td colspan="7"><div class="empty-state compact"><b>Nenhuma conta por aqui</b><p>As contas que correspondem a este filtro aparecerão aqui.</p></div></td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endmacro %}

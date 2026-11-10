@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>{{ title or app_name or "CENTRALVET" }}</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=20261103-elegante">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=20261110-financeiro">
   <link rel="manifest" href="{{ url_for('manifest_json') }}">
   <meta name="theme-color" content="#123d33">
   <meta name="application-name" content="CENTRALVET">
@@ -54,7 +54,7 @@
       <img src="{{ url_for('static', filename='centralvet_logo.png') }}" alt="CENTRALVET Agropecuária">
     </a>
     <div class="workspace-label"><span></span> GESTÃO AGROPECUÁRIA</div>
-    {% set section = {'editar_recibo':'vendas','recibo_venda':'vendas','editar_produto':'produtos','editar_cliente':'clientes','editar_fornecedor':'fornecedores','devolucao_form':'devolucoes','nova_devolucao':'devolucoes','devolucao_detalhe':'devolucoes','certificado_upload':'fiscal'}.get(request.endpoint, request.endpoint) %}
+    {% set section = {'crediario_cliente':'contas_receber','nova_conta':'financeiro','editar_conta':'financeiro','ver_conta':'financeiro','editar_recibo':'vendas','recibo_venda':'vendas','editar_produto':'produtos','editar_cliente':'clientes','editar_fornecedor':'fornecedores','devolucao_form':'devolucoes','nova_devolucao':'devolucoes','devolucao_detalhe':'devolucoes','certificado_upload':'fiscal'}.get(request.endpoint, request.endpoint) %}
     {% macro navitem(endpoint, label, glyph) %}
       <a href="{{url_for(endpoint)}}" class="{{'active' if section == endpoint else ''}}" {% if section == endpoint %}aria-current="page"{% endif %}>{{icon(glyph)}}<span>{{label}}</span>{% if section == endpoint %}<i class="nav-dot"></i>{% endif %}</a>
     {% endmacro %}
@@ -64,6 +64,8 @@
       {{navitem('index','Painel geral','grid')}}
       {{navitem('vendas','Vendas','cart')}}
       {{navitem('financeiro','Financeiro','wallet')}}
+      {{navitem('contas_pagar','Contas a pagar','file')}}
+      {{navitem('contas_receber','Contas a receber','users')}}
       <div class="menu-label">OPERAÇÃO</div>
       {{navitem('produtos','Produtos','box')}}
       {{navitem('estoque','Estoque','stock')}}
@@ -80,7 +82,7 @@
   </aside>
   <main class="main">
     <header class="workspace-topbar hide-print">
-      <div><span class="workspace-overline">CENTRALVET AGROPECUÁRIA</span><div class="workspace-breadcrumb">Gestão <span>/</span> {{ {'index':'Painel geral','nova_venda':'Nova venda','vendas':'Vendas','produtos':'Produtos','estoque':'Estoque','clientes':'Clientes','fornecedores':'Fornecedores','financeiro':'Financeiro','fiscal':'Fiscal','importar_xml':'Importar XML','devolucoes':'Devoluções','relatorios':'Relatórios','backups':'Backups'}.get(request.endpoint, 'Detalhes') }}</div></div>
+      <div><span class="workspace-overline">CENTRALVET AGROPECUÁRIA</span><div class="workspace-breadcrumb">Gestão <span>/</span> {{ {'index':'Painel geral','nova_venda':'Nova venda','vendas':'Vendas','produtos':'Produtos','estoque':'Estoque','clientes':'Clientes','fornecedores':'Fornecedores','contas_pagar':'Contas a pagar','contas_receber':'Contas a receber','crediario_cliente':'Ficha do cliente','ver_conta':'Detalhes da conta','nova_conta':'Nova conta','editar_conta':'Editar conta','financeiro':'Financeiro','fiscal':'Fiscal','importar_xml':'Importar XML','devolucoes':'Devoluções','relatorios':'Relatórios','backups':'Backups'}.get(request.endpoint, 'Detalhes') }}</div></div>
       <div class="workspace-user"><div class="date-display" id="workspaceDate"></div><span class="user-avatar">{{(session.get('user') or 'A')[:1]|upper}}</span><div><b>{{session.get('user') or 'Administrador'}}</b><small>Área de gestão</small></div></div>
     </header>
     {% with messages = get_flashed_messages(with_categories=true) %}
@@ -100,9 +102,17 @@
   {% block auth %}{% endblock %}
 {% endif %}
 <script>
+document.addEventListener('submit',function(e){
+  const form=e.target;
+  if(!form.matches('[data-single-submit]'))return;
+  if(form.dataset.submitting){e.preventDefault();return;}
+  form.dataset.submitting='1';
+  form.querySelectorAll('button[type="submit"],button:not([type])').forEach(b=>{b.disabled=true;b.textContent='Salvando…';});
+});
+window.addEventListener('pageshow',function(e){if(e.persisted)location.reload();});
 function moeda(v){return (Number(v||0)).toLocaleString('pt-BR',{style:'currency',currency:'BRL'});}
 function num(v){return (Number(v||0)).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});}
-function parseBR(v){ if(!v) return 0; v=(''+v).replace('R$','').replace(/\./g,'').replace(',','.').trim(); return Number(v)||0; }
+function parseBR(v){ if(!v)return 0; let s=String(v).replace('R$','').trim(); if(s.includes(','))s=s.replace(/\./g,'').replace(',','.'); return Number(s)||0; }
 function filterTable(inputId, tableId){
   const q = document.getElementById(inputId).value.toLowerCase();
   document.querySelectorAll('#'+tableId+' tbody tr').forEach(tr=>{

@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% block content %}
+{% set campos = valores if valores else (venda if venda else {}) %}
 <section class="hero">
   <span class="badge">Venda rápida</span>
   <h1>{{ "Editar recibo #" ~ venda.id if venda else "Nova venda" }}</h1>
@@ -8,26 +9,31 @@
 <form method="post" class="card" id="saleForm" onsubmit="return validarVendaBusca()">
   <h2>Dados da venda</h2>
   <div class="row">
-    <div><label>Data</label><input type="date" name="data" value="{{ hoje }}"></div>
+    <div><label>Data</label><input type="date" name="data" value="{{ campos.data or hoje }}"></div>
     <div>
       <label>Buscar cliente</label>
       <input id="clienteBusca" type="text" list="clientesLista" placeholder="Digite o nome do cliente..." autocomplete="off" oninput="selecionarCliente(this)">
-      <input type="hidden" name="cliente_id" id="clienteId" value="{{ venda.cliente_id or '' if venda else '' }}">
+      <input type="hidden" name="cliente_id" id="clienteId" value="{{ campos.cliente_id or '' }}">
       <datalist id="clientesLista">
         {% for c in clientes %}
-        <option value="{{ c.nome }}{% if c.telefone %} — {{ c.telefone }}{% endif %}" data-id="{{ c.id }}" data-nome="{{ c.nome }}"></option>
+        <option value="{{ c.nome }}{% if c.telefone %} — {{ c.telefone }}{% endif %}{% if c.cpf_cnpj %} · {{ c.cpf_cnpj }}{% endif %}" data-id="{{ c.id }}" data-nome="{{ c.nome }}"></option>
         {% endfor %}
       </datalist>
       <small class="search-hint">Digite parte do nome e escolha o cliente na lista.</small>
     </div>
-    <div><label>Cliente avulso</label><input name="cliente_nome" id="clienteNomeRapido" value="{{ venda.cliente_nome or '' if venda else '' }}" placeholder="Se não for cadastrado"></div>
-    <div><label>Status</label><select name="status"><option {% if venda and venda.status == "Pago" %}selected{% endif %}>Pago</option><option {% if venda and venda.status == "Pendente" %}selected{% endif %}>Pendente</option></select></div>
-    <div><label>Forma pagamento</label><select name="forma_pagamento"><option {% if venda and venda.forma_pagamento == "Dinheiro" %}selected{% endif %}>Dinheiro</option><option {% if venda and venda.forma_pagamento == "Pix" %}selected{% endif %}>Pix</option><option {% if venda and venda.forma_pagamento == "Cartão débito" %}selected{% endif %}>Cartão débito</option><option {% if venda and venda.forma_pagamento == "Cartão crédito" %}selected{% endif %}>Cartão crédito</option><option {% if venda and venda.forma_pagamento == "Crediário" %}selected{% endif %}>Crediário</option><option {% if venda and venda.forma_pagamento == "Boleto" %}selected{% endif %}>Boleto</option></select></div>
-    <div><label>Tipo fiscal</label><select name="nf_tipo"><option {% if venda and venda.nf_tipo == "NFC-e" %}selected{% endif %}>NFC-e</option><option {% if venda and venda.nf_tipo == "NF-e" %}selected{% endif %}>NF-e</option><option {% if venda and venda.nf_tipo == "Sem nota agora" %}selected{% endif %}>Sem nota agora</option></select></div>
-    <div><label>Desconto</label><input name="desconto" id="desconto" value="{{ venda.desconto if venda else 0 }}" oninput="calcTotal()"></div>
-    <div><label>Observação</label><input name="observacao" value="{{ venda.observacao or '' if venda else '' }}"></div>
+    <div><label>Cliente avulso</label><input name="cliente_nome" id="clienteNomeRapido" value="{{ campos.cliente_nome or '' }}" placeholder="Se não for cadastrado"></div>
+    <div><label>CPF/CNPJ do cliente avulso</label><input name="cliente_documento" value="{{ campos.cliente_documento or '' }}" placeholder="Para identificar no crediário"></div>
+    <div><label>Telefone do cliente avulso</label><input name="cliente_telefone" value="{{ campos.cliente_telefone or '' }}" inputmode="tel"></div>
+    <div><label>Status</label><select name="status" id="vendaStatus" onchange="atualizarCrediario()"><option {% if campos.status == "Pago" %}selected{% endif %}>Pago</option><option {% if campos.status == "Pendente" %}selected{% endif %}>Pendente</option>{% if venda and venda.status=="Parcial" %}<option selected>Parcial</option>{% endif %}</select></div>
+    <div><label>Forma pagamento</label><select name="forma_pagamento" id="vendaForma" onchange="atualizarCrediario(true)"><option {% if campos.forma_pagamento == "Dinheiro" %}selected{% endif %}>Dinheiro</option><option {% if campos.forma_pagamento == "Pix" %}selected{% endif %}>Pix</option><option {% if campos.forma_pagamento == "Cartão débito" %}selected{% endif %}>Cartão débito</option><option {% if campos.forma_pagamento == "Cartão crédito" %}selected{% endif %}>Cartão crédito</option><option {% if campos.forma_pagamento == "Crediário" %}selected{% endif %}>Crediário</option><option {% if campos.forma_pagamento == "Boleto" %}selected{% endif %}>Boleto</option></select></div>
+    <div><label>Tipo fiscal</label><select name="nf_tipo"><option {% if campos.nf_tipo == "NFC-e" %}selected{% endif %}>NFC-e</option><option {% if campos.nf_tipo == "NF-e" %}selected{% endif %}>NF-e</option><option {% if campos.nf_tipo == "Sem nota agora" %}selected{% endif %}>Sem nota agora</option></select></div>
+    <div id="vendaVencimento"><label>Vencimento do crediário / conta</label><input type="date" name="vencimento" id="vencimento" value="{{ campos.vencimento or vencimento_padrao }}"></div>
+    <div><label>Desconto</label><input name="desconto" id="desconto" value="{{ campos.desconto if campos.desconto is defined else 0 }}" oninput="calcTotal()"></div>
+    <div><label>Observação</label><input name="observacao" value="{{ campos.observacao or '' }}"></div>
   </div>
 
+  <p class="finance-notice" id="vendaCrediarioAviso" hidden>A venda ficará em Contas a receber, vinculada ao cliente. Depois, registre os pagamentos pela ficha dele.</p>
+  {% if venda %}<p class="finance-help">Os recebimentos já registrados serão preservados. Se o valor da compra aumentar, a diferença ficará em aberto.</p>{% endif %}
   <datalist id="produtosBusca">
     {% for p in produtos %}
     <option value="{{ p.nome }}{% if p.codigo %} — {{ p.codigo }}{% endif %} • estoque {{ p.estoque|num }} {{ p.unidade }}"
@@ -63,6 +69,14 @@
 {% endblock %}
 {% block scripts %}
 <script>
+function atualizarCrediario(alterouForma=false){
+  const forma=document.getElementById('vendaForma');
+  const status=document.getElementById('vendaStatus');
+  if(alterouForma&&forma.value==='Crediário')status.value='Pendente';
+  const aberto=forma.value==='Crediário'||status.value!=='Pago';
+  document.getElementById('vencimento').required=aberto;
+  document.getElementById('vendaCrediarioAviso').hidden=!aberto;
+}
 function encontrarOpcao(listaId, valor){
   const opts = document.getElementById(listaId).options;
   for(const opt of opts){ if(opt.value === valor) return opt; }
@@ -126,8 +140,13 @@ function validarVendaBusca(){
   if(clienteBusca.value.trim() && !clienteId.value && !clienteRapido.value.trim()){
     clienteRapido.value = clienteBusca.value.trim();
   }
+  if((document.getElementById('vendaForma').value==='Crediário'||document.getElementById('vendaStatus').value!=='Pago')&&!clienteId.value&&!clienteRapido.value.trim()){
+    clienteRapido.setCustomValidity('Informe o cliente para a venda no crediário.');clienteRapido.reportValidity();return false;
+  }
+  clienteRapido.setCustomValidity('');
   return true;
 }
+document.getElementById('clienteNomeRapido').addEventListener('input',function(){this.setCustomValidity('');});
 document.addEventListener('input', function(e){
   if(e.target.classList && e.target.classList.contains('produto-busca')) e.target.setCustomValidity('');
 });
@@ -144,10 +163,11 @@ if(itensIniciais.length){
     const opt=Array.from(document.getElementById('produtosBusca').options).find(o=>o.dataset.id===String(item.produto_id));
     const busca=row.querySelector('.produto-busca');
     if(opt){busca.value=opt.value;selecionarProduto(busca);}
-    row.querySelector('[name="quantidade[]"]').value=item.quantidade;
-    row.querySelector('[name="preco_unit[]"]').value=item.preco_unit;
+    row.querySelector('[name="quantidade[]"]').value=typeof item.quantidade==='number'?String(item.quantidade).replace('.',','):item.quantidade;
+    row.querySelector('[name="preco_unit[]"]').value=typeof item.preco_unit==='number'?String(item.preco_unit).replace('.',','):item.preco_unit;
   }
   calcTotal();
 } else {addItem();}
+atualizarCrediario();
 </script>
 {% endblock %}

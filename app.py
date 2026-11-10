@@ -10,7 +10,7 @@ import json
 import subprocess
 import xml.etree.ElementTree as ET
 from io import BytesIO
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from zoneinfo import ZoneInfo
 from functools import wraps
 from flask import Flask, render_template, request, redirect, url_for, flash, session, send_file, jsonify, send_from_directory, make_response
@@ -20,6 +20,9 @@ from reportlab.lib.units import mm
 from reportlab.pdfbase.pdfmetrics import stringWidth
 from reportlab.lib.utils import ImageReader
 from PIL import Image, ImageOps
+
+import financeiro_service as fs
+from financeiro_routes import registrar_rotas
 
 APP_NAME = "CENTRALVET Agropecuária"
 DATA_DIR = os.environ.get("DATA_DIR", os.path.join(os.path.dirname(__file__), "data"))
@@ -152,7 +155,7 @@ def normalizar_unidade(v):
     return s
 
 def today_str():
-    return date.today().isoformat()
+    return datetime.now(ZoneInfo("America/Sao_Paulo")).date().isoformat()
 
 def br_date(s):
     if not s:
@@ -1101,6 +1104,7 @@ def init_db():
               observacao=COALESCE(NULLIF(observacao,''), :observacao)
             WHERE id=1
         """, FISCAL_DEFAULTS)
+        fs.migrar(db, add_column)
         db.commit()
 
 # Antes de criar as tabelas, tenta recuperar a cópia espelho persistente.
@@ -1382,12 +1386,11 @@ def index():
     estoque_valor = fetch_one("SELECT COALESCE(SUM(estoque * preco_custo),0) v FROM produtos WHERE ativo=1")["v"]
     vendas_mes = fetch_one("SELECT COALESCE(SUM(total),0) v FROM vendas WHERE substr(data,1,7)=substr(?,1,7)", (hoje,))["v"]
     lucro_mes = fetch_one("SELECT COALESCE(SUM(lucro),0) v FROM vendas WHERE substr(data,1,7)=substr(?,1,7)", (hoje,))["v"]
-    a_receber = fetch_one("SELECT COALESCE(SUM(valor),0) v FROM financeiro WHERE tipo='Entrada' AND status!='Pago'")["v"]
-    a_pagar = fetch_one("SELECT COALESCE(SUM(valor),0) v FROM financeiro WHERE tipo='Saída' AND status!='Pago'")["v"]
-    saldo_caixa = fetch_one("""
-        SELECT COALESCE(SUM(CASE WHEN tipo='Entrada' THEN valor ELSE -valor END),0) v
-        FROM financeiro WHERE status='Pago'
-    """)["v"]
+    with get_db() as db:
+        cards_financeiro = fs.resumo(db, hoje)
+    a_receber = cards_financeiro["receber"]
+    a_pagar = cards_financeiro["pagar"]
+    saldo_caixa = cards_financeiro["entradas"] - cards_financeiro["saidas"]
     ult_vendas = fetch_all("SELECT * FROM vendas ORDER BY id DESC LIMIT 6")
     estoque_baixo = fetch_all("SELECT * FROM produtos WHERE ativo=1 AND estoque <= estoque_minimo ORDER BY estoque ASC LIMIT 8")
     pendencias = []
@@ -1629,78 +1632,109 @@ def vendas():
         rows = fetch_all("SELECT * FROM vendas ORDER BY id DESC LIMIT 100")
     return render_template("vendas.html", rows=rows, q=q)
 
+
+def cliente_da_venda(db, precisa_identificar):
+    try:
+        cliente_id = int(request.form.get("cliente_id") or 0)
+    except ValueError:
+        raise ValueError("Selecione um cliente válido.")
+    nome = request.form.get("cliente_nome","").strip()
+    if cliente_id:
+        c = db.execute("SELECT * FROM clientes WHERE id=?", (cliente_id,)).fetchone()
+        if not c:
+            raise ValueError("Cliente não encontrado.")
+        return cliente_id,c["nome"]
+    if precisa_identificar and not nome:
+        raise ValueError("Escolha ou cadastre o cliente para a venda no crediário.")
+    if nome:
+        documento = request.form.get("cliente_documento","").strip()
+        telefone = request.form.get("cliente_telefone","").strip()
+        cliente_id = db.execute("INSERT INTO clientes (nome,cpf_cnpj,telefone) VALUES (?,?,?)",
+                                (nome,documento,telefone)).lastrowid
+    return cliente_id,nome
+
+
 @app.route("/vendas/nova", methods=["GET","POST"])
 @login_required
 def nova_venda():
     clientes_list = fetch_all("SELECT * FROM clientes ORDER BY nome")
     produtos_list = fetch_all("SELECT * FROM produtos WHERE ativo=1 ORDER BY nome")
+    venda_form = None
+    itens_form = []
     if request.method == "POST":
-        cliente_id = int(request.form.get("cliente_id") or 0)
-        cliente_nome = request.form.get("cliente_nome","").strip()
-        if cliente_id:
-            c = fetch_one("SELECT * FROM clientes WHERE id=?", (cliente_id,))
-            cliente_nome = c["nome"] if c else cliente_nome
-        elif cliente_nome:
+        try:
             with get_db() as db:
-                cur = db.execute("INSERT INTO clientes (nome) VALUES (?)", (cliente_nome,))
-                cliente_id = cur.lastrowid
-                db.commit()
-        forma = request.form.get("forma_pagamento","Dinheiro")
-        status = request.form.get("status","Pago")
-        desconto = money_to_float(request.form.get("desconto"))
-        prod_ids = request.form.getlist("produto_id[]")
-        qtds = request.form.getlist("quantidade[]")
-        precos = request.form.getlist("preco_unit[]")
-        itens = []
-        subtotal = lucro_total = 0.0
-        for pid, q, pu in zip(prod_ids, qtds, precos):
-            if not pid:
-                continue
-            qtd = num_to_float(q)
-            preco = money_to_float(pu)
-            if qtd <= 0:
-                continue
-            prod = fetch_one("SELECT * FROM produtos WHERE id=?", (int(pid),))
-            if not prod:
-                continue
-            if qtd > float(prod["estoque"] or 0):
-                flash(f"Estoque insuficiente para {prod['nome']}. Disponível: {fmt_num(prod['estoque'])}", "erro")
-                return redirect(url_for("nova_venda"))
-            custo = float(prod["preco_custo"] or 0)
-            total = qtd * preco
-            lucro = (preco - custo) * qtd
-            subtotal += total
-            lucro_total += lucro
-            itens.append((int(pid), prod["nome"], qtd, preco, custo, total, lucro))
-        if not itens:
-            flash("Adicione pelo menos um produto.", "erro")
-            return redirect(url_for("nova_venda"))
-        total = max(0, subtotal - desconto)
-        with get_db() as db:
-            cur = db.execute("""
-                INSERT INTO vendas (data, cliente_id, cliente_nome, forma_pagamento, status, subtotal, desconto, total, lucro, observacao, nf_tipo)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (request.form.get("data") or today_str(), cliente_id, cliente_nome, forma, status, subtotal, desconto, total, lucro_total, request.form.get("observacao",""), request.form.get("nf_tipo","NFC-e")))
-            venda_id = cur.lastrowid
-            for pid, nome, qtd, preco, custo, total_item, lucro in itens:
-                db.execute("""
-                    INSERT INTO venda_itens (venda_id, produto_id, produto_nome, quantidade, preco_unit, custo_unit, total, lucro)
-                    VALUES (?,?,?,?,?,?,?,?)
-                """, (venda_id, pid, nome, qtd, preco, custo, total_item, lucro))
-                db.execute("UPDATE produtos SET estoque=estoque-? WHERE id=?", (qtd, pid))
-                db.execute("""
-                    INSERT INTO estoque_mov (data, produto_id, tipo, quantidade, custo_unit, valor_total, origem, observacao)
-                    VALUES (?, ?, 'Saída', ?, ?, ?, 'Venda', ?)
-                """, (request.form.get("data") or today_str(), pid, qtd, custo, qtd*custo, f"Venda #{venda_id}"))
-            db.execute("""
-                INSERT INTO financeiro (data, tipo, descricao, valor, forma, status, pessoa, referencia_tipo, referencia_id)
-                VALUES (?, 'Entrada', ?, ?, ?, ?, ?, 'Venda', ?)
-            """, (request.form.get("data") or today_str(), f"Venda #{venda_id}", total, forma, "Pago" if status=="Pago" else "Pendente", cliente_nome, venda_id))
-            db.commit()
-        backup_db("venda")
-        flash("Venda salva e estoque baixado automaticamente.", "ok")
-        return redirect(url_for("recibo_venda", venda_id=venda_id))
-    return render_template("venda_form.html", clientes=clientes_list, produtos=produtos_list, hoje=today_str())
+                db.execute("BEGIN IMMEDIATE")
+                forma = request.form.get("forma_pagamento","Dinheiro")
+                status = request.form.get("status","Pago")
+                if forma == "Crediário":
+                    status = "Pendente"
+                if status not in ("Pago","Pendente") or forma not in ("Dinheiro","Pix","Cartão débito","Cartão crédito","Crediário","Boleto"):
+                    raise ValueError("Confira o pagamento da venda.")
+                nf_tipo = request.form.get("nf_tipo","NFC-e")
+                if nf_tipo not in ("NFC-e","NF-e","Sem nota agora"):
+                    raise ValueError("Escolha o tipo fiscal.")
+                data = fs.data_valida(request.form.get("data") or today_str())
+                if status == "Pago" and data > today_str():
+                    raise ValueError("Uma venda paga não pode ter data no futuro.")
+                vencimento = fs.data_valida(request.form.get("vencimento"), obrigatoria=status!="Pago")
+                desconto = fs.centavos(request.form.get("desconto","0"))
+                cliente_id,cliente_nome = cliente_da_venda(db,status!="Pago")
+                prod_ids = request.form.getlist("produto_id[]")
+                qtds = request.form.getlist("quantidade[]")
+                precos = request.form.getlist("preco_unit[]")
+                if not prod_ids or not len(prod_ids)==len(qtds)==len(precos):
+                    raise ValueError("Adicione pelo menos um produto.")
+                itens,pedido = [],defaultdict(float)
+                subtotal = 0
+                lucro_total = 0
+                for pid,q,pu in zip(prod_ids,qtds,precos):
+                    try:
+                        pid = int(pid)
+                    except ValueError:
+                        raise ValueError("Escolha um produto da lista.")
+                    qtd = validar_numero_recibo(q,"uma quantidade")
+                    preco = fs.centavos(pu)/100
+                    prod = db.execute("SELECT * FROM produtos WHERE id=? AND ativo=1",(pid,)).fetchone()
+                    if not prod or qtd<=0:
+                        raise ValueError("Confira o produto e sua quantidade.")
+                    pedido[pid] += qtd
+                    if pedido[pid] > float(prod["estoque"] or 0)+1e-9:
+                        raise ValueError(f"Estoque insuficiente para {prod['nome']}.")
+                    custo=float(prod["preco_custo"] or 0)
+                    total_item=fs.centavos_db(qtd*preco)
+                    lucro=(preco-custo)*qtd
+                    subtotal+=total_item
+                    lucro_total+=lucro
+                    itens.append((pid,prod["nome"],qtd,preco,custo,total_item/100,lucro))
+                if desconto>subtotal:
+                    raise ValueError("O desconto não pode ser maior que o subtotal.")
+                total=(subtotal-desconto)/100
+                venda_id=db.execute("""INSERT INTO vendas
+                    (data,cliente_id,cliente_nome,forma_pagamento,status,subtotal,desconto,total,lucro,observacao,nf_tipo,vencimento)
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    (data,cliente_id,cliente_nome,forma,status,subtotal/100,desconto/100,total,round(lucro_total-desconto/100,2),
+                     request.form.get("observacao",""),nf_tipo,vencimento)).lastrowid
+                for pid,nome,qtd,preco,custo,total_item,lucro in itens:
+                    db.execute("""INSERT INTO venda_itens
+                        (venda_id,produto_id,produto_nome,quantidade,preco_unit,custo_unit,total,lucro)
+                        VALUES (?,?,?,?,?,?,?,?)""", (venda_id,pid,nome,qtd,preco,custo,total_item,lucro))
+                    db.execute("UPDATE produtos SET estoque=estoque-? WHERE id=?",(qtd,pid))
+                    db.execute("""INSERT INTO estoque_mov
+                        (data,produto_id,tipo,quantidade,custo_unit,valor_total,origem,observacao)
+                        VALUES (?,?,'Saída',?,?,?,'Venda',?)""", (data,pid,qtd,custo,qtd*custo,f"Venda #{venda_id}"))
+                fs.sincronizar_venda(db,venda_id,today_str())
+            backup_db("venda")
+            flash("Venda salva. Estoque e financeiro atualizados.", "ok")
+            return redirect(url_for("recibo_venda",venda_id=venda_id))
+        except ValueError as exc:
+            flash(str(exc),"erro")
+            venda_form=request.form.to_dict()
+            itens_form=[dict(produto_id=pid,quantidade=q,preco_unit=pu) for pid,q,pu in zip(
+                request.form.getlist("produto_id[]"),request.form.getlist("quantidade[]"),request.form.getlist("preco_unit[]"))]
+    return render_template("venda_form.html",clientes=clientes_list,produtos=produtos_list,
+        hoje=today_str(),venda=None,valores=venda_form or {},itens_iniciais=itens_form,
+        vencimento_padrao=(date.fromisoformat(today_str())+timedelta(days=30)).isoformat())
 
 
 def recibo_editavel(venda):
@@ -1761,7 +1795,7 @@ def editar_recibo(venda_id):
                     if not prod or (not prod["ativo"] and pid not in devolvido):
                         raise ValueError("Produto indisponível.")
                     qtd = validar_numero_recibo(qtd, "uma quantidade")
-                    preco = validar_numero_recibo(preco, "um preço")
+                    preco = fs.centavos(preco)/100
                     if qtd <= 0:
                         raise ValueError("A quantidade deve ser maior que zero.")
                     pedido[pid] += qtd
@@ -1773,7 +1807,7 @@ def editar_recibo(venda_id):
                     itens.append((pid, prod["nome"], qtd, preco, custo, total_item, lucro))
                     subtotal += total_item
                     lucro_total += lucro
-                desconto = validar_numero_recibo(request.form.get("desconto"), "um desconto")
+                desconto = fs.centavos(request.form.get("desconto"))/100
                 if desconto > subtotal:
                     raise ValueError("O desconto não pode ser maior que o subtotal.")
                 data = request.form.get("data") or today_str()
@@ -1781,35 +1815,28 @@ def editar_recibo(venda_id):
                 status = request.form.get("status")
                 forma = request.form.get("forma_pagamento")
                 nf_tipo = request.form.get("nf_tipo")
-                if status not in ("Pago", "Pendente") or forma not in ("Dinheiro", "Pix", "Cartão débito", "Cartão crédito", "Crediário", "Boleto") or nf_tipo not in ("NFC-e", "NF-e", "Sem nota agora"):
+                if status not in ("Pago", "Pendente", "Parcial") or forma not in ("Dinheiro", "Pix", "Cartão débito", "Cartão crédito", "Crediário", "Boleto") or nf_tipo not in ("NFC-e", "NF-e", "Sem nota agora"):
                     raise ValueError("Confira o pagamento e o tipo fiscal.")
-                cliente_id = int(request.form.get("cliente_id") or 0)
-                nome = request.form.get("cliente_nome", "").strip()
-                if cliente_id:
-                    cliente = db.execute("SELECT nome FROM clientes WHERE id=?", (cliente_id,)).fetchone()
-                    if not cliente:
-                        raise ValueError("Cliente não encontrado.")
-                    nome = cliente["nome"]
-                elif nome:
-                    cliente_id = db.execute("INSERT INTO clientes (nome) VALUES (?)", (nome,)).lastrowid
+                if forma == "Crediário":
+                    status = "Pendente"
+                cliente_id,nome = cliente_da_venda(db,status!="Pago")
+                vencimento = fs.data_valida(request.form.get("vencimento"),obrigatoria=status!="Pago")
                 for pid, qtd in devolvido.items():
                     db.execute("UPDATE produtos SET estoque=estoque+? WHERE id=?", (qtd, pid))
                 db.execute("DELETE FROM venda_itens WHERE venda_id=?", (venda_id,))
                 db.execute("DELETE FROM estoque_mov WHERE origem='Venda' AND observacao=?", (f"Venda #{venda_id}",))
                 total = round(subtotal-desconto, 2)
                 db.execute("""UPDATE vendas SET data=?, cliente_id=?, cliente_nome=?, forma_pagamento=?,
-                    status=?, subtotal=?, desconto=?, total=?, lucro=?, observacao=?, nf_tipo=? WHERE id=?""",
-                    (data, cliente_id, nome, forma, status, subtotal, desconto, total, lucro_total,
-                     request.form.get("observacao", ""), nf_tipo, venda_id))
+                    status=?, subtotal=?, desconto=?, total=?, lucro=?, observacao=?, nf_tipo=?, vencimento=? WHERE id=?""",
+                    (data, cliente_id, nome, forma, status, subtotal, desconto, total, round(lucro_total-desconto,2),
+                     request.form.get("observacao", ""), nf_tipo, vencimento, venda_id))
                 for pid, nome_prod, qtd, preco, custo, total_item, lucro in itens:
                     db.execute("""INSERT INTO venda_itens (venda_id,produto_id,produto_nome,quantidade,preco_unit,custo_unit,total,lucro)
                         VALUES (?,?,?,?,?,?,?,?)""", (venda_id,pid,nome_prod,qtd,preco,custo,total_item,lucro))
                     db.execute("UPDATE produtos SET estoque=estoque-? WHERE id=?", (qtd,pid))
                     db.execute("""INSERT INTO estoque_mov (data,produto_id,tipo,quantidade,custo_unit,valor_total,origem,observacao)
                         VALUES (?,?,'Saída',?,?,?,'Venda',?)""", (data,pid,qtd,custo,qtd*custo,f"Venda #{venda_id}"))
-                db.execute("DELETE FROM financeiro WHERE referencia_tipo='Venda' AND referencia_id=?", (venda_id,))
-                db.execute("""INSERT INTO financeiro (data,tipo,descricao,valor,forma,status,pessoa,referencia_tipo,referencia_id)
-                    VALUES (?,'Entrada',?,?,?,?,?,'Venda',?)""", (data,f"Venda #{venda_id}",total,forma,status,nome,venda_id))
+                fs.sincronizar_venda(db,venda_id,today_str())
             backup_db("recibo-editado")
             flash("Recibo atualizado. Estoque e financeiro ajustados.", "ok")
             return redirect(url_for("recibo_venda", venda_id=venda_id))
@@ -1817,7 +1844,7 @@ def editar_recibo(venda_id):
             flash(str(exc), "erro")
             # Reapresenta o formulário preenchido para permitir corrigir o erro.
             venda = dict(venda)
-            for campo in ("data", "cliente_id", "cliente_nome", "forma_pagamento", "status", "desconto", "observacao", "nf_tipo"):
+            for campo in ("data", "cliente_id", "cliente_nome", "forma_pagamento", "status", "desconto", "observacao", "nf_tipo", "vencimento"):
                 venda[campo] = request.form.get(campo, venda[campo])
     clientes = fetch_all("SELECT * FROM clientes ORDER BY nome")
     produtos = fetch_all("""SELECT * FROM produtos WHERE ativo=1 OR id IN
@@ -1827,7 +1854,7 @@ def editar_recibo(venda_id):
         itens = [dict(produto_id=pid, quantidade=qtd, preco_unit=preco)
                  for pid,qtd,preco in zip(request.form.getlist("produto_id[]"), request.form.getlist("quantidade[]"), request.form.getlist("preco_unit[]"))]
     return render_template("venda_form.html", clientes=clientes, produtos=produtos,
-                           hoje=venda["data"], venda=venda, itens_iniciais=itens)
+                           hoje=venda["data"], venda=venda, valores=venda, itens_iniciais=itens, vencimento_padrao=(date.fromisoformat(today_str())+timedelta(days=30)).isoformat())
 
 @app.route("/vendas/<int:venda_id>/excluir", methods=["POST"])
 @login_required
@@ -1841,9 +1868,16 @@ def excluir_recibo(venda_id):
         if not recibo_editavel(venda):
             flash("Esta venda possui registro fiscal e não pode ser excluída por aqui.", "erro")
             return redirect(url_for("recibo_venda", venda_id=venda_id))
+        if db.execute("""SELECT 1 FROM financeiro_baixas b JOIN financeiro f ON f.id=b.financeiro_id
+            WHERE f.referencia_tipo='Venda' AND f.referencia_id=? AND b.origem='Manual'
+            AND b.estornado_em IS NULL LIMIT 1""", (venda_id,)).fetchone():
+            flash("Esta venda tem recebimentos no crediário. Estorne os recebimentos na conta antes de excluir o recibo.", "erro")
+            return redirect(url_for("recibo_venda", venda_id=venda_id))
         for item in db.execute("SELECT produto_id,quantidade FROM venda_itens WHERE venda_id=?", (venda_id,)).fetchall():
             db.execute("UPDATE produtos SET estoque=estoque+? WHERE id=?", (item["quantidade"],item["produto_id"]))
         db.execute("DELETE FROM estoque_mov WHERE origem='Venda' AND observacao=?", (f"Venda #{venda_id}",))
+        db.execute("""DELETE FROM financeiro_baixas WHERE financeiro_id IN
+            (SELECT id FROM financeiro WHERE referencia_tipo='Venda' AND referencia_id=?)""", (venda_id,))
         db.execute("DELETE FROM financeiro WHERE referencia_tipo='Venda' AND referencia_id=?", (venda_id,))
         db.execute("DELETE FROM venda_itens WHERE venda_id=?", (venda_id,))
         db.execute("DELETE FROM vendas WHERE id=?", (venda_id,))
@@ -1859,7 +1893,10 @@ def recibo_venda(venda_id):
         flash("Venda não encontrada.", "erro")
         return redirect(url_for("vendas"))
     itens = fetch_all("SELECT * FROM venda_itens WHERE venda_id=?", (venda_id,))
-    return render_template("recibo_venda.html", venda=venda, itens=itens)
+    with get_db() as db:
+        financeira = db.execute("SELECT id FROM financeiro WHERE referencia_tipo='Venda' AND referencia_id=?",(venda_id,)).fetchone()
+        conta_venda = fs.conta(db,financeira["id"],today_str()) if financeira else None
+    return render_template("recibo_venda.html", venda=venda, itens=itens,conta_venda=conta_venda)
 
 def _thermal_wrap(text, font_name, font_size, max_width):
     text = str(text or "").strip()
@@ -2408,56 +2445,7 @@ def api_produtos():
 
 
 # ---------------- Financeiro ----------------
-
-@app.route("/financeiro", methods=["GET","POST"])
-@login_required
-def financeiro():
-    if request.method == "POST":
-        exec_sql("""
-            INSERT INTO financeiro (data,tipo,descricao,valor,forma,status,vencimento,pessoa,observacao)
-            VALUES (?,?,?,?,?,?,?,?,?)
-        """, (
-            request.form.get("data") or today_str(),
-            request.form.get("tipo","Entrada"),
-            request.form.get("descricao","").strip(),
-            money_to_float(request.form.get("valor")),
-            request.form.get("forma","").strip(),
-            request.form.get("status","Pago"),
-            request.form.get("vencimento",""),
-            request.form.get("pessoa","").strip(),
-            request.form.get("observacao","").strip()
-        ))
-        backup_db("financeiro")
-        flash("Lançamento financeiro salvo.", "ok")
-        return redirect(url_for("financeiro"))
-    q = request.args.get("q","").strip()
-    if q:
-        rows = fetch_all("SELECT * FROM financeiro WHERE descricao LIKE ? OR pessoa LIKE ? ORDER BY id DESC", (f"%{q}%", f"%{q}%"))
-    else:
-        rows = fetch_all("SELECT * FROM financeiro ORDER BY id DESC LIMIT 150")
-    cards = {
-        "entradas": fetch_one("SELECT COALESCE(SUM(valor),0) v FROM financeiro WHERE tipo='Entrada' AND status='Pago'")["v"],
-        "saidas": fetch_one("SELECT COALESCE(SUM(valor),0) v FROM financeiro WHERE tipo='Saída' AND status='Pago'")["v"],
-        "receber": fetch_one("SELECT COALESCE(SUM(valor),0) v FROM financeiro WHERE tipo='Entrada' AND status!='Pago'")["v"],
-        "pagar": fetch_one("SELECT COALESCE(SUM(valor),0) v FROM financeiro WHERE tipo='Saída' AND status!='Pago'")["v"],
-    }
-    return render_template("financeiro.html", rows=rows, cards=cards, q=q, hoje=today_str())
-
-@app.route("/financeiro/<int:item_id>/pagar", methods=["POST"])
-@login_required
-def financeiro_pagar(item_id):
-    exec_sql("UPDATE financeiro SET status='Pago', data=? WHERE id=?", (today_str(), item_id))
-    backup_db("financeiro-pago")
-    flash("Marcado como pago.", "ok")
-    return redirect(url_for("financeiro"))
-
-@app.route("/financeiro/<int:item_id>/excluir", methods=["POST"])
-@login_required
-def financeiro_excluir(item_id):
-    exec_sql("DELETE FROM financeiro WHERE id=?", (item_id,))
-    backup_db("financeiro-excluido")
-    flash("Lançamento excluído.", "ok")
-    return redirect(url_for("financeiro"))
+registrar_rotas(app, get_db, backup_db, login_required, today_str)
 
 
 # ---------------- Fiscal / XML ----------------
@@ -3101,8 +3089,9 @@ def relatorios():
 
     def carregar():
         vendas_periodo = fetch_one("SELECT COALESCE(SUM(total),0) total, COALESCE(SUM(lucro),0) lucro, COUNT(*) qtd FROM vendas WHERE data BETWEEN ? AND ?", (inicio, fim))
-        entradas = fetch_one("SELECT COALESCE(SUM(valor),0) v FROM financeiro WHERE tipo='Entrada' AND status='Pago' AND data BETWEEN ? AND ?", (inicio, fim))["v"]
-        saidas = fetch_one("SELECT COALESCE(SUM(valor),0) v FROM financeiro WHERE tipo='Saída' AND status='Pago' AND data BETWEEN ? AND ?", (inicio, fim))["v"]
+        with get_db() as db:
+            entradas = fs.caixa_periodo(db,inicio,fim,"Entrada")
+            saidas = fs.caixa_periodo(db,inicio,fim,"Saída")
         mais_vendidos = fetch_all("""
             SELECT COALESCE(vi.produto_nome,'Produto') produto_nome, COALESCE(SUM(vi.quantidade),0) qtd, COALESCE(SUM(vi.total),0) total
             FROM venda_itens vi JOIN vendas v ON v.id=vi.venda_id

@@ -36,7 +36,7 @@
   {% for r in rows %}
     <tr>
       <td><b>{{ r.nome }}</b></td><td>{{ r.cpf_cnpj }}</td><td>{{ r.telefone }}</td><td>{{ r.email }}</td>
-      <td><a class="btn secondary" href="{{ url_for('editar_cliente' if tipo=='clientes' else 'editar_fornecedor', item_id=r.id) }}">Editar</a></td>
+      <td>{% if tipo=='clientes' %}<a class="btn secondary" href="{{ url_for('crediario_cliente',cliente_id=r.id) }}">Crediário</a> {% endif %}<a class="btn secondary" href="{{ url_for('editar_cliente' if tipo=='clientes' else 'editar_fornecedor', item_id=r.id) }}">Editar</a></td>
     </tr>
   {% else %}<tr><td colspan="5">Nada cadastrado ainda.</td></tr>{% endfor %}
   </tbody></table>

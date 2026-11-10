@@ -22,3 +22,13 @@ Visual Elegante — 2026-11-03
 - Layout adaptável para celular, foco visível e contraste de formulários.
 - Impressão MPT-II USB mantida.
 - Correção do relatório de produtos mais vendidos (soma dos itens).
+
+Financeiro e crediário — 2026-11-10
+- Contas a pagar e a receber em telas separadas.
+- Boletos, despesas, vencimentos e filtros de pendências.
+- Ficha do cliente com CPF/CNPJ, contato, compras e saldo devedor.
+- Venda no crediário vinculada automaticamente ao cliente e ao financeiro.
+- Baixas parciais, quitação e estornos com histórico.
+- Caixa e relatórios por valor e data de cada baixa.
+- Migração preservando os registros existentes.
+- Edição e exclusão de recibos mantidas e integradas ao histórico financeiro.

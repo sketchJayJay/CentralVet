@@ -16,8 +16,8 @@
   {% endfor %}
 </div>
 <div class="overview-strip">
-  <a href="{{url_for('financeiro')}}"><span class="strip-icon emerald">{{icon('wallet')}}</span><div><span>A receber</span><strong>{{a_receber|money}}</strong></div>{{icon('arrow')}}</a>
-  <a href="{{url_for('financeiro')}}"><span class="strip-icon golden">{{icon('wallet')}}</span><div><span>A pagar</span><strong>{{a_pagar|money}}</strong></div>{{icon('arrow')}}</a>
+  <a href="{{url_for('contas_receber')}}"><span class="strip-icon emerald">{{icon('wallet')}}</span><div><span>A receber</span><strong>{{a_receber|money}}</strong></div>{{icon('arrow')}}</a>
+  <a href="{{url_for('contas_pagar')}}"><span class="strip-icon golden">{{icon('wallet')}}</span><div><span>A pagar</span><strong>{{a_pagar|money}}</strong></div>{{icon('arrow')}}</a>
   <a href="{{url_for('produtos')}}"><span class="strip-icon blue">{{icon('box')}}</span><div><span>Produtos ativos</span><strong>{{total_produtos}}</strong></div>{{icon('arrow')}}</a>
   <a href="{{url_for('estoque')}}"><span class="strip-icon {{'rose' if baixo else 'emerald'}}">{{icon('alert' if baixo else 'check')}}</span><div><span>Estoque baixo</span><strong>{{baixo}} <small>produto(s)</small></strong></div>{{icon('arrow')}}</a>
 </div>

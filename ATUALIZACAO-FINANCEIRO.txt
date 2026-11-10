@@ -1,0 +1,60 @@
+CENTRALVET — Contas a pagar, contas a receber e crediário
+10/11/2026
+
+COMO USAR
+
+1. Contas a pagar
+   Entre pelo menu ou por Financeiro > Contas a pagar.
+   Clique em + Conta a pagar e preencha o fornecedor, descrição, valor
+   e vencimento. Pode salvar número do boleto e linha digitável.
+   A conta fica em aberto até você registrar o pagamento.
+   Use os filtros Em aberto, Vencidas, Vencem hoje, Quitadas ou Todas.
+
+2. Contas a receber
+   Entre por Financeiro > Contas a receber.
+   A visão Por cliente mostra nome, CPF/CNPJ, telefone e saldo devedor.
+   Abra a ficha para conferir as compras, vencimentos e recebimentos.
+   A visão Todas as contas permite conferir os lançamentos individuais.
+   É possível cadastrar contas manuais, inclusive saldos anteriores.
+
+3. Vendas no crediário
+   Na nova venda, escolha Crediário e selecione o cliente.
+   Para um cliente novo, informe o nome e, se disponíveis, CPF/CNPJ
+   e telefone nos campos do cliente avulso.
+   Confira o vencimento. A venda entra automaticamente em Contas a receber.
+   Para clientes já cadastrados, complete os dados em Clientes > Editar.
+
+4. Recebimentos e pagamentos parciais
+   Abra uma conta e informe quanto foi pago, a data e a forma.
+   O restante continua em aberto; a situação fica Parcial.
+   Na ficha do cliente, pode informar um valor para abater primeiro as
+   compras com vencimento mais antigo ou manter o total para quitar tudo.
+   Para baixar uma compra específica, abra a conta dessa compra.
+
+5. Correções
+   Use Estornar no histórico para corrigir uma baixa feita por engano.
+   O estorno preserva o histórico e devolve o valor ao saldo em aberto.
+   Editar um recibo preserva a conta e seus recebimentos.
+   Se houver recebimentos no crediário, estorne-os antes de excluir a venda.
+   Vendas com registro fiscal continuam protegidas contra edição/exclusão.
+   Contas manuais com histórico de pagamentos não são excluídas pelo botão
+   Excluir conta; os pagamentos podem ser estornados e os dados corrigidos.
+
+ATUALIZAR NO COOLIFY
+
+Baixe uma cópia em Backups antes da atualização.
+Substitua os arquivos do projeto no repositório e faça o redeploy.
+Mantenha as variáveis e volumes persistentes atuais, principalmente
+/app/data e o volume do certificado em /app/certs.
+Não recrie nem apague os volumes.
+As novas colunas/tabelas são criadas automaticamente no banco existente.
+O ZIP não contém banco de dados nem dados de teste.
+
+Os lançamentos antigos são mantidos. Contas já pagas recebem um registro
+de pagamento com o valor e a data existentes, uma única vez.
+As vendas antigas são vinculadas pelo ID do cliente, sem juntar homônimos.
+Contas antigas sem cadastro continuam visíveis para conferência.
+
+O caixa e os relatórios passam a somar o valor efetivamente pago/recebido,
+na data da baixa, inclusive pagamentos parciais. O valor original da conta
+e o saldo ainda em aberto ficam separados.

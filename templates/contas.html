@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% from "financeiro_macros.html" import abas,tabela_contas %}
+{% set receber = tipo=='Entrada' %}
+{% set endpoint = 'contas_receber' if receber else 'contas_pagar' %}
+{% block content %}
+<section class="hero finance-hero">
+  <span class="badge">Financeiro · {{ 'Crediário' if receber else 'Despesas e boletos' }}</span>
+  <h1>Contas a {{ 'receber' if receber else 'pagar' }}</h1>
+  <p>{{ 'Veja quem deve, abra a ficha do cliente e registre os recebimentos.' if receber else 'Cadastre boletos e despesas. Confira os vencimentos e registre o que já foi pago.' }}</p>
+  <div class="actions"><a class="btn green" href="{{ url_for('nova_conta',tipo=tipo) }}">+ {{ 'Conta a receber' if receber else 'Conta a pagar' }}</a>{% if receber %}<a class="btn secondary" href="{{ url_for('nova_venda') }}">Nova venda no crediário</a>{% endif %}</div>
+</section>
+{{ abas() }}
+<div class="grid finance-metrics">
+  <a class="card metric metric-link" href="{{ url_for(endpoint,status='abertas') }}"><div class="label">Total em aberto</div><div class="value">{{ cards.total|money }}</div><small>Saldo após os pagamentos</small></a>
+  <a class="card metric metric-link" href="{{ url_for(endpoint,status='vencidas') }}"><div class="label">Vencidas</div><div class="value finance-overdue">{{ cards.vencidas|money }}</div><small>Vencimento anterior a hoje</small></a>
+  <a class="card metric metric-link" href="{{ url_for(endpoint,status='hoje') }}"><div class="label">Vencem hoje</div><div class="value">{{ cards.hoje|money }}</div><small>{{ hoje|brdate }}</small></a>
+  <a class="card metric metric-link" href="{{ url_for(endpoint,status='todas',visao='contas') }}"><div class="label">{{ 'Já recebido' if receber else 'Já pago' }}</div><div class="value green">{{ cards.quitado|money }}</div><small>Inclui pagamentos parciais</small></a>
+</div>
+<section class="card">
+  <form method="get" class="finance-filters">
+    <input type="hidden" name="visao" value="{{ visao }}">
+    <div class="finance-filter-search"><label>Buscar {{ 'cliente, CPF/CNPJ ou conta' if receber else 'fornecedor, documento ou conta' }}</label><input name="q" value="{{ q }}" placeholder="Digite para buscar"></div>
+    <div><label>Situação</label><select name="status">{% for valor,label in [('abertas','Em aberto'),('vencidas','Vencidas'),('hoje','Vencem hoje'),('pagas','Quitadas'),('todas','Todas')] %}<option value="{{ valor }}" {{ 'selected' if status==valor }}>{{ label }}</option>{% endfor %}</select></div>
+    <div><label>Vencimento de</label><input type="date" name="inicio" value="{{ inicio }}"></div>
+    <div><label>Até</label><input type="date" name="fim" value="{{ fim }}"></div>
+    <div class="actions"><button>Filtrar</button><a class="btn secondary" href="{{ url_for(endpoint) }}">Limpar</a></div>
+  </form>
+</section>
+{% if receber %}
+<div class="finance-view-switch hide-print">
+  <a class="btn {{ 'green' if visao=='clientes' else 'secondary' }}" href="{{ url_for(endpoint,visao='clientes',q=q,status=status,inicio=inicio,fim=fim) }}">Por cliente</a>
+  <a class="btn {{ 'green' if visao=='contas' else 'secondary' }}" href="{{ url_for(endpoint,visao='contas',q=q,status=status,inicio=inicio,fim=fim) }}">Todas as contas</a>
+</div>
+{% endif %}
+{% if receber and visao=='clientes' %}
+<section class="card">
+  <div class="card-heading"><div><span class="eyebrow muted">CREDIÁRIO</span><h2>Clientes {{ 'com contas em aberto' if status=='abertas' else 'encontrados' }}</h2></div><span class="count-chip">{{ grupos|length }}</span></div>
+  <table class="finance-table"><thead><tr><th>Cliente</th><th>Contato</th><th>Contas no filtro</th><th>Em aberto</th><th>Vencido</th><th></th></tr></thead><tbody>
+  {% for c in grupos %}<tr>
+    <td data-label="Cliente"><b>{{ c.nome }}</b><small class="cell-sub">{{ c.cpf_cnpj or 'CPF/CNPJ não informado' }}</small></td>
+    <td data-label="Contato">{{ c.telefone or 'Não informado' }}</td>
+    <td data-label="Contas">{{ c.quantidade }}{% if c.vencimento %}<small class="cell-sub">Primeiro vencimento: {{ c.vencimento|brdate }}</small>{% endif %}</td>
+    <td data-label="Em aberto" class="money-cell"><b>{{ (c.saldo_centavos/100)|money }}</b></td>
+    <td data-label="Vencido" class="{{ 'finance-overdue' if c.vencido_centavos }}">{{ (c.vencido_centavos/100)|money }}</td>
+    <td class="finance-row-actions"><a class="btn secondary small" href="{{ url_for('crediario_cliente',cliente_id=c.id) }}">Abrir ficha</a></td>
+  </tr>{% else %}<tr><td colspan="6"><div class="empty-state compact"><b>Nenhum cliente neste filtro</b><p>As vendas no crediário aparecerão automaticamente aqui.</p></div></td></tr>{% endfor %}
+  </tbody></table>
+</section>
+{% if sem_cadastro %}
+<section class="card"><h2>Contas antigas sem vínculo com cadastro</h2><p class="finance-help">Abra a conta para conferir a pessoa e completar o vínculo. Os nomes não são agrupados automaticamente.</p>{{ tabela_contas(sem_cadastro,tipo) }}</section>
+{% endif %}
+{% else %}
+<section class="card"><div class="card-heading"><h2>{{ 'Contas a receber' if receber else 'Boletos e despesas' }}</h2><span class="count-chip">{{ rows|length }}</span></div>{{ tabela_contas(rows,tipo) }}</section>
+{% endif %}
+{% endblock %}

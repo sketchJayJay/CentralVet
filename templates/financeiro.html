@@ -1,41 +1,27 @@
-
 {% extends "base.html" %}
+{% from "financeiro_macros.html" import abas,tabela_contas %}
 {% block content %}
-<section class="hero"><span class="badge">Financeiro</span><h1>Caixa, contas a pagar e receber</h1><p>Lançamentos manuais e automáticos vindos das vendas.</p></section>
-<div class="grid">
-  <div class="card metric"><div class="label">Entradas pagas</div><div class="value green">{{ cards.entradas|money }}</div></div>
-  <div class="card metric"><div class="label">Saídas pagas</div><div class="value warn">{{ cards.saidas|money }}</div></div>
-  <div class="card metric"><div class="label">A receber</div><div class="value warn">{{ cards.receber|money }}</div></div>
-  <div class="card metric"><div class="label">A pagar</div><div class="value warn">{{ cards.pagar|money }}</div></div>
+<section class="hero finance-hero">
+  <span class="badge">Financeiro</span><h1>Seu dinheiro, organizado.</h1>
+  <p>Acompanhe o que falta pagar, quem tem valores em aberto e os pagamentos já registrados.</p>
+  <div class="actions"><a class="btn green" href="{{ url_for('nova_conta',tipo='Saída') }}">+ Conta a pagar</a><a class="btn secondary" href="{{ url_for('nova_conta',tipo='Entrada') }}">+ Conta a receber</a></div>
+</section>
+{{ abas() }}
+<div class="grid finance-metrics">
+  <a class="card metric metric-link" href="{{ url_for('contas_pagar') }}"><div class="label">Falta pagar</div><div class="value">{{ cards.pagar|money }}</div><small>{{ cards.pagar_vencido|money }} em contas vencidas</small></a>
+  <a class="card metric metric-link" href="{{ url_for('contas_receber') }}"><div class="label">Falta receber</div><div class="value green">{{ cards.receber|money }}</div><small>{{ cards.receber_vencido|money }} em contas vencidas</small></a>
+  <div class="card metric"><div class="label">Recebimentos registrados</div><div class="value">{{ cards.entradas|money }}</div><small>Inclui os recebimentos parciais</small></div>
+  <div class="card metric"><div class="label">Caixa registrado</div><div class="value">{{ (cards.entradas-cards.saidas)|money }}</div><small>Recebido menos {{ cards.saidas|money }} pagos</small></div>
 </div>
-<div class="card">
-<h2>Novo lançamento</h2>
-<form method="post">
-  <div class="row">
-    <div><label>Data</label><input type="date" name="data" value="{{ hoje }}"></div>
-    <div><label>Tipo</label><select name="tipo"><option>Entrada</option><option>Saída</option></select></div>
-    <div><label>Descrição</label><input name="descricao" required></div>
-    <div><label>Valor</label><input name="valor" required></div>
-    <div><label>Forma</label><input name="forma" placeholder="Pix, dinheiro, cartão..."></div>
-    <div><label>Status</label><select name="status"><option>Pago</option><option>Pendente</option></select></div>
-    <div><label>Vencimento</label><input type="date" name="vencimento"></div>
-    <div><label>Pessoa</label><input name="pessoa"></div>
-  </div>
-  <label style="margin-top:12px">Observação</label><input name="observacao">
-  <button class="green">Salvar lançamento</button>
-</form>
-</div>
-<div class="card">
-<h2>Lançamentos</h2>
-<form method="get" style="display:flex;gap:8px;margin-bottom:10px"><input name="q" value="{{q}}" placeholder="Buscar"><button>Buscar</button></form>
-<table><thead><tr><th>Data</th><th>Tipo</th><th>Descrição</th><th>Pessoa</th><th>Valor</th><th>Status</th><th></th></tr></thead><tbody>
-{% for r in rows %}
-<tr>
-  <td>{{r.data|brdate}}</td><td>{{r.tipo}}</td><td>{{r.descricao}}</td><td>{{r.pessoa}}</td><td><b>{{r.valor|money}}</b></td><td><span class="pill {{ 'green' if r.status=='Pago' else 'warn' }}">{{r.status}}</span></td>
-  <td>{% if r.status!='Pago' %}<form method="post" action="{{ url_for('financeiro_pagar', item_id=r.id) }}" style="display:inline"><button class="secondary">Marcar pago</button></form>{% endif %}
-  <form method="post" action="{{ url_for('financeiro_excluir', item_id=r.id) }}" style="display:inline" onsubmit="return confirm('Excluir lançamento?')"><button class="danger">Excluir</button></form></td>
-</tr>
-{% else %}<tr><td colspan="7">Sem lançamentos.</td></tr>{% endfor %}
-</tbody></table>
-</div>
+<section class="card">
+  <div class="card-heading"><div><span class="eyebrow muted">AGENDA FINANCEIRA</span><h2>Próximos pagamentos e recebimentos</h2></div></div>
+  {{ tabela_contas(proximas,misto=True) }}
+</section>
+<section class="card">
+  <div class="card-heading"><div><span class="eyebrow muted">MOVIMENTO DO CAIXA</span><h2>Últimas baixas</h2></div><a class="text-link" href="{{ url_for('relatorios') }}">Ver relatórios</a></div>
+  <table><thead><tr><th>Data</th><th>Movimento</th><th>Pessoa / Conta</th><th>Valor</th><th>Forma</th><th></th></tr></thead><tbody>
+    {% for b in baixas %}<tr><td>{{ b.data|brdate }}</td><td><span class="pill {{ 'green' if b.tipo=='Entrada' else 'warn' }}">{{ 'Recebimento' if b.tipo=='Entrada' else 'Pagamento' }}</span></td><td><b>{{ b.pessoa or 'Sem identificação' }}</b><small class="cell-sub">{{ b.descricao }}</small></td><td><b>{{ (b.valor_centavos/100)|money }}</b></td><td>{{ b.forma }}</td><td><a class="btn secondary small" href="{{ url_for('ver_conta',item_id=b.conta_id) }}">Ver conta</a></td></tr>
+    {% else %}<tr><td colspan="6"><div class="empty-state compact">Os pagamentos e recebimentos aparecerão aqui.</div></td></tr>{% endfor %}
+  </tbody></table>
+</section>
 {% endblock %}

@@ -1,6 +1,13 @@
 ## Impressora atual: MPT-II / MobilePrinter 58 mm via USB
 Consulte LEIA-MPT-II-USB.txt. A seleção agora é feita na lista de impressoras do notebook; as instruções POS-5890U abaixo são históricas.
 
+## Financeiro e crediário — 10/11/2026
+Consulte ATUALIZACAO-FINANCEIRO.txt para uso e atualização.
+O menu agora separa Contas a pagar e Contas a receber. Inclui ficha do
+cliente, recebimentos parciais, histórico de baixas e estornos.
+Os arquivos financeiro_service.py e financeiro_routes.py fazem parte da aplicação
+e precisam ser enviados junto com app.py.
+
 # CENTRALVET Agropecuária — NF-e + NFC-e direto com SEFAZ/MG
 
 Esta versão inclui emissão de **NF-e modelo 55 de devolução diretamente na SEFAZ/MG**, sem provedor fiscal mensal.

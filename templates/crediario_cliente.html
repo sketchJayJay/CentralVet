@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% from "financeiro_macros.html" import tabela_contas %}
+{% block content %}
+<section class="hero finance-hero">
+  <span class="badge">Contas a receber · Ficha do cliente</span><h1>{{ cliente.nome }}</h1>
+  <p>CPF/CNPJ: {{ cliente.cpf_cnpj or 'Não informado' }} · Telefone: {{ cliente.telefone or 'Não informado' }}</p>
+  <div class="actions"><a class="btn secondary" href="{{ url_for('contas_receber') }}">Voltar</a><a class="btn secondary" href="{{ url_for('editar_cliente',item_id=cliente.id) }}">Editar cadastro</a><button class="btn secondary" type="button" onclick="window.print()">Imprimir extrato</button></div>
+</section>
+<div class="grid finance-metrics finance-three">
+  <div class="card metric"><div class="label">Saldo devedor</div><div class="value">{{ saldo|money }}</div><small>O que ainda falta receber</small></div>
+  <div class="card metric"><div class="label">Saldo vencido</div><div class="value finance-overdue">{{ vencido|money }}</div><small>Contas com vencimento anterior a hoje</small></div>
+  <div class="card metric"><div class="label">Recebimentos registrados</div><div class="value green">{{ recebido|money }}</div><small>Pagamentos válidos deste cliente</small></div>
+</div>
+{% if saldo>0 %}
+<section class="card hide-print">
+  <h2>Receber do cliente</h2><p class="finance-help">Informe quanto ele está pagando. O valor será abatido das contas com vencimento mais antigo. Para uma compra específica, use Receber na conta abaixo.</p>
+  <form method="post" action="{{ url_for('receber_cliente',cliente_id=cliente.id) }}" data-single-submit>
+    <input type="hidden" name="csrf_token" value="{{ financeiro_csrf }}"><input type="hidden" name="token" value="{{ financeiro_token() }}">
+    <div class="row">
+      <div><label>Valor recebido (R$)</label><input name="valor" inputmode="decimal" value="{{ saldo|num }}" required><small>Para quitar tudo: {{ saldo|money }}</small></div>
+      <div><label>Data do recebimento</label><input type="date" name="data" value="{{ hoje }}" max="{{ hoje }}" required></div>
+      <div><label>Forma de pagamento</label><select name="forma">{% for f in formas_financeiras %}<option>{{ f }}</option>{% endfor %}</select></div>
+      <div><label>Observação</label><input name="observacao" placeholder="Opcional"></div>
+    </div><button class="green">Registrar recebimento</button>
+  </form>
+</section>
+{% endif %}
+<section class="card finance-account-info"><h2>Dados do cliente</h2><dl class="finance-client-data"><div><dt>CPF/CNPJ</dt><dd>{{ cliente.cpf_cnpj or 'Não informado' }}</dd></div><div><dt>Telefone</dt><dd>{{ cliente.telefone or 'Não informado' }}</dd></div><div><dt>Endereço</dt><dd>{{ cliente.endereco or 'Não informado' }}</dd></div></dl>{% if not cliente.cpf_cnpj %}<p class="finance-help hide-print">Complete o documento em Editar cadastro para identificar o cliente na cobrança.</p>{% endif %}</section>
+<section class="card"><div class="card-heading"><h2>Compras e contas do cliente</h2><span class="count-chip">{{ rows|length }}</span></div>{{ tabela_contas(rows,'Entrada') }}</section>
+<section class="card"><h2>Histórico de recebimentos</h2><table><thead><tr><th>Data</th><th>Conta</th><th>Valor</th><th>Forma</th><th>Situação</th><th></th></tr></thead><tbody>
+{% for b in baixas %}<tr><td>{{ b.data|brdate }}</td><td>{{ b.descricao }}</td><td><b>{{ (b.valor_centavos/100)|money }}</b></td><td>{{ b.forma }}</td><td><span class="pill {{ 'red' if b.estornado_em else 'green' }}">{{ 'Estornado' if b.estornado_em else 'Confirmado' }}</span></td><td><a class="btn secondary small" href="{{ url_for('ver_conta',item_id=b.financeiro_id) }}">Ver conta</a></td></tr>
+{% else %}<tr><td colspan="6">Nenhum recebimento registrado.</td></tr>{% endfor %}
+</tbody></table></section>
+{% endblock %}

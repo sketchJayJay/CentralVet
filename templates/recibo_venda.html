@@ -45,6 +45,14 @@
   </div>
 </div>
 
+<div class="hide-print card finance-sale-summary">
+  {% if conta_venda %}
+  <div><b>{{ 'Quitada' if conta_venda.status=='Pago' else 'Saldo da venda: ' ~ (conta_venda.saldo|money) }}</b>
+  <small class="cell-sub">Recebido: {{ conta_venda.baixado|money }}{% if venda.vencimento %} · Vencimento: {{ venda.vencimento|brdate }}{% endif %}</small></div>
+  <a class="btn secondary" href="{{ url_for('ver_conta',item_id=conta_venda.id) }}">Ver conta / receber</a>
+  {% if venda.cliente_id %}<a class="btn secondary" href="{{ url_for('crediario_cliente',cliente_id=venda.cliente_id) }}">Ficha do cliente</a>{% endif %}
+  {% endif %}
+</div>
 <div class="receipt">
   <div class="top receipt-top">
     <div class="receipt-logo-line">

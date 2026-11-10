@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% set receber = row.tipo=='Entrada' %}
+{% set venda = row.referencia_tipo=='Venda' %}
+{% block content %}
+<section class="hero finance-hero"><span class="badge">Financeiro</span><h1>{{ 'Editar' if row.id else 'Nova' }} conta a {{ 'receber' if receber else 'pagar' }}</h1><p>{{ 'Identifique o cliente e informe o valor e o vencimento.' if receber else 'Salve o boleto ou a despesa para acompanhar o que precisa pagar.' }}</p></section>
+<section class="card">
+  {% if venda %}<p class="finance-notice">Esta conta está vinculada à venda #{{ row.referencia_id }}. Produtos, valor e cliente são alterados em <a href="{{ url_for('recibo_venda',venda_id=row.referencia_id) }}">Ver venda / recibo</a>. Aqui você pode ajustar o vencimento e os dados da cobrança.</p>{% endif %}
+  <form method="post" data-single-submit>
+    <input type="hidden" name="csrf_token" value="{{ financeiro_csrf }}">
+    <input type="hidden" name="tipo" value="{{ row.tipo }}">
+    {% if not row.id %}<input type="hidden" name="criacao_token" value="{{ row.criacao_token }}">{% endif %}
+    <h2>{{ 'Cliente' if receber else 'Fornecedor e conta' }}</h2>
+    {% if receber and not venda %}
+    <label>Cliente</label><select name="cliente_id" id="financeiroCliente" onchange="novoClienteVisivel()">
+      <option value="">Selecione um cliente</option>
+      {% for c in clientes %}<option value="{{ c.id }}" {{ 'selected' if row.cliente_id|string == c.id|string }}>{{ c.nome }}{% if c.cpf_cnpj %} · {{ c.cpf_cnpj }}{% elif c.telefone %} · {{ c.telefone }}{% endif %}</option>{% endfor %}
+      <option value="novo" {{ 'selected' if row.cliente_id=='novo' }}>+ Cadastrar novo cliente</option>
+    </select>
+    <div id="financeiroNovoCliente" class="finance-subform" hidden>
+      <div class="row">
+        <div><label>Nome do novo cliente</label><input name="novo_nome" value="{{ row.novo_nome or '' }}"></div>
+        <div><label>CPF/CNPJ</label><input name="novo_documento" value="{{ row.novo_documento or '' }}"></div>
+        <div><label>Telefone/WhatsApp</label><input name="novo_telefone" value="{{ row.novo_telefone or '' }}" inputmode="tel"></div>
+      </div>
+    </div>
+    {% elif not venda %}
+    <div class="row">
+      <div><label>Fornecedor cadastrado (opcional)</label><select name="fornecedor_id"><option value="">Informar o nome abaixo</option>{% for f in fornecedores %}<option value="{{ f.id }}" {{ 'selected' if row.fornecedor_id|string==f.id|string }}>{{ f.nome }}{% if f.cpf_cnpj %} · {{ f.cpf_cnpj }}{% endif %}</option>{% endfor %}</select></div>
+      <div><label>Nome do fornecedor / pessoa</label><input name="pessoa" value="{{ row.pessoa or '' }}" placeholder="Ex.: Distribuidora, aluguel, energia"></div>
+    </div>
+    {% else %}<p><b>{{ row.nome_exibicao }}</b></p>{% endif %}
+    <div class="row" style="margin-top:18px">
+      <div><label>Descrição</label><input name="descricao" value="{{ row.descricao or '' }}" placeholder="Ex.: Boleto de mercadorias" required {{ 'readonly' if venda }}></div>
+      <div><label>Valor original (R$)</label><input name="valor" inputmode="decimal" value="{{ row.valor|num if row.valor is defined and row.valor is number else row.valor or '' }}" required {{ 'readonly' if venda }}></div>
+      <div><label>Data do lançamento</label><input type="date" name="data" value="{{ row.data }}" required {{ 'readonly' if venda }}></div>
+      <div><label>Vencimento</label><input type="date" name="vencimento" value="{{ row.vencimento or '' }}" required></div>
+      <div><label>Número do boleto / documento (opcional)</label><input name="documento" value="{{ row.documento or '' }}" placeholder="Ex.: Boleto 1203 / parcela 1"></div>
+      <div><label>Forma {{ 'prevista de recebimento' if receber else 'de pagamento' }}</label><select name="forma">{% for f in formas_financeiras %}<option {{ 'selected' if f==row.forma }}>{{ f }}</option>{% endfor %}</select></div>
+      {% if not row.id %}
+      <div><label>Situação inicial</label><select name="status" id="financeiroStatus" onchange="dataBaixaVisivel()"><option value="Pendente" {{ 'selected' if row.status!='Pago' }}>Em aberto</option><option value="Pago" {{ 'selected' if row.status=='Pago' }}>Já {{ 'recebido' if receber else 'pago' }}</option></select></div>
+      <div id="financeiroDataBaixa" hidden><label>Data {{ 'do recebimento' if receber else 'do pagamento' }}</label><input type="date" name="data_pagamento" value="{{ row.data_pagamento or hoje }}" max="{{ hoje }}"></div>
+      {% endif %}
+    </div>
+    <label style="margin-top:16px">Linha digitável / código de barras (opcional)</label><input name="codigo_barras" value="{{ row.codigo_barras or '' }}" inputmode="numeric" placeholder="Cole os números do boleto">
+    <label style="margin-top:16px">Observações (opcional)</label><textarea name="observacao" rows="2">{{ row.observacao or '' }}</textarea>
+    <div class="actions"><button class="green">{{ 'Salvar alterações' if row.id else 'Salvar conta' }}</button><a class="btn secondary" href="{{ url_for('ver_conta',item_id=row.id) if row.id else url_for('contas_receber' if receber else 'contas_pagar') }}">Voltar</a></div>
+  </form>
+</section>
+{% endblock %}
+{% block scripts %}
+<script>
+function novoClienteVisivel(){
+  const select=document.getElementById('financeiroCliente');
+  const novo=document.getElementById('financeiroNovoCliente');
+  if(!select||!novo)return;
+  novo.hidden=select.value!=='novo';
+  novo.querySelector('[name="novo_nome"]').required=!novo.hidden;
+}
+function dataBaixaVisivel(){
+  const status=document.getElementById('financeiroStatus');
+  const campo=document.getElementById('financeiroDataBaixa');
+  if(status&&campo)campo.hidden=status.value!=='Pago';
+}
+novoClienteVisivel();dataBaixaVisivel();
+</script>
+{% endblock %}
