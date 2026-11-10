@@ -2,7 +2,7 @@
 {% block content %}
 <section class="hero">
   <span class="badge">Venda rápida</span>
-  <h1>Nova venda</h1>
+  <h1>{{ "Editar recibo #" ~ venda.id if venda else "Nova venda" }}</h1>
   <p>Busque cliente e produtos pelo nome. O sistema calcula total, baixa estoque, lança no financeiro e prepara NF-e/NFC-e.</p>
 </section>
 <form method="post" class="card" id="saleForm" onsubmit="return validarVendaBusca()">
@@ -12,7 +12,7 @@
     <div>
       <label>Buscar cliente</label>
       <input id="clienteBusca" type="text" list="clientesLista" placeholder="Digite o nome do cliente..." autocomplete="off" oninput="selecionarCliente(this)">
-      <input type="hidden" name="cliente_id" id="clienteId" value="">
+      <input type="hidden" name="cliente_id" id="clienteId" value="{{ venda.cliente_id or '' if venda else '' }}">
       <datalist id="clientesLista">
         {% for c in clientes %}
         <option value="{{ c.nome }}{% if c.telefone %} — {{ c.telefone }}{% endif %}" data-id="{{ c.id }}" data-nome="{{ c.nome }}"></option>
@@ -20,12 +20,12 @@
       </datalist>
       <small class="search-hint">Digite parte do nome e escolha o cliente na lista.</small>
     </div>
-    <div><label>Cliente avulso</label><input name="cliente_nome" id="clienteNomeRapido" placeholder="Se não for cadastrado"></div>
-    <div><label>Status</label><select name="status"><option>Pago</option><option>Pendente</option></select></div>
-    <div><label>Forma pagamento</label><select name="forma_pagamento"><option>Dinheiro</option><option>Pix</option><option>Cartão débito</option><option>Cartão crédito</option><option>Crediário</option><option>Boleto</option></select></div>
-    <div><label>Tipo fiscal</label><select name="nf_tipo"><option>NFC-e</option><option>NF-e</option><option>Sem nota agora</option></select></div>
-    <div><label>Desconto</label><input name="desconto" id="desconto" value="0" oninput="calcTotal()"></div>
-    <div><label>Observação</label><input name="observacao"></div>
+    <div><label>Cliente avulso</label><input name="cliente_nome" id="clienteNomeRapido" value="{{ venda.cliente_nome or '' if venda else '' }}" placeholder="Se não for cadastrado"></div>
+    <div><label>Status</label><select name="status"><option {% if venda and venda.status == "Pago" %}selected{% endif %}>Pago</option><option {% if venda and venda.status == "Pendente" %}selected{% endif %}>Pendente</option></select></div>
+    <div><label>Forma pagamento</label><select name="forma_pagamento"><option {% if venda and venda.forma_pagamento == "Dinheiro" %}selected{% endif %}>Dinheiro</option><option {% if venda and venda.forma_pagamento == "Pix" %}selected{% endif %}>Pix</option><option {% if venda and venda.forma_pagamento == "Cartão débito" %}selected{% endif %}>Cartão débito</option><option {% if venda and venda.forma_pagamento == "Cartão crédito" %}selected{% endif %}>Cartão crédito</option><option {% if venda and venda.forma_pagamento == "Crediário" %}selected{% endif %}>Crediário</option><option {% if venda and venda.forma_pagamento == "Boleto" %}selected{% endif %}>Boleto</option></select></div>
+    <div><label>Tipo fiscal</label><select name="nf_tipo"><option {% if venda and venda.nf_tipo == "NFC-e" %}selected{% endif %}>NFC-e</option><option {% if venda and venda.nf_tipo == "NF-e" %}selected{% endif %}>NF-e</option><option {% if venda and venda.nf_tipo == "Sem nota agora" %}selected{% endif %}>Sem nota agora</option></select></div>
+    <div><label>Desconto</label><input name="desconto" id="desconto" value="{{ venda.desconto if venda else 0 }}" oninput="calcTotal()"></div>
+    <div><label>Observação</label><input name="observacao" value="{{ venda.observacao or '' if venda else '' }}"></div>
   </div>
 
   <datalist id="produtosBusca">
@@ -43,7 +43,7 @@
     <h2>Total da venda: <span id="totalView">R$ 0,00</span></h2>
     <p style="color:#b9d7ee">O sistema bloqueia venda maior que o estoque e baixa os produtos automaticamente ao salvar.</p>
   </div>
-  <button class="green">Salvar venda e gerar recibo</button>
+  <button class="green">{{ "Salvar alterações do recibo" if venda else "Salvar venda e gerar recibo" }}</button>
   <a class="btn secondary" href="{{ url_for('vendas') }}">Voltar</a>
 </form>
 
@@ -131,6 +131,23 @@ function validarVendaBusca(){
 document.addEventListener('input', function(e){
   if(e.target.classList && e.target.classList.contains('produto-busca')) e.target.setCustomValidity('');
 });
-addItem();
+const itensIniciais = {{ itens_iniciais|default([])|tojson }};
+const clienteAtual = document.getElementById('clienteId').value;
+if(clienteAtual){
+  const opt=Array.from(document.getElementById('clientesLista').options).find(o=>o.dataset.id===clienteAtual);
+  if(opt){document.getElementById('clienteBusca').value=opt.value;document.getElementById('clienteNomeRapido').value='';}
+}
+if(itensIniciais.length){
+  for(const item of itensIniciais){
+    addItem();
+    const row=document.querySelector('#items .item-row:last-child');
+    const opt=Array.from(document.getElementById('produtosBusca').options).find(o=>o.dataset.id===String(item.produto_id));
+    const busca=row.querySelector('.produto-busca');
+    if(opt){busca.value=opt.value;selecionarProduto(busca);}
+    row.querySelector('[name="quantidade[]"]').value=item.quantidade;
+    row.querySelector('[name="preco_unit[]"]').value=item.preco_unit;
+  }
+  calcTotal();
+} else {addItem();}
 </script>
 {% endblock %}

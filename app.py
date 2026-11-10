@@ -1,5 +1,7 @@
 
 import os
+import math
+from collections import defaultdict
 import sqlite3
 import shutil
 import hashlib
@@ -1699,6 +1701,155 @@ def nova_venda():
         flash("Venda salva e estoque baixado automaticamente.", "ok")
         return redirect(url_for("recibo_venda", venda_id=venda_id))
     return render_template("venda_form.html", clientes=clientes_list, produtos=produtos_list, hoje=today_str())
+
+
+def recibo_editavel(venda):
+    # Qualquer tentativa fiscal numerada mantém seu histórico preservado.
+    return (not venda["nf_numero"] and not venda["nf_chave"]
+            and venda["nf_status"] in (None, "", "Não emitida"))
+
+app.jinja_env.globals["recibo_editavel"] = recibo_editavel
+
+def validar_numero_recibo(valor, nome):
+    texto = str(valor or "").strip().replace("R$", "").replace(" ", "")
+    if "," in texto:
+        texto = texto.replace(".", "").replace(",", ".")
+    try:
+        numero = float(texto)
+    except (ValueError, TypeError):
+        raise ValueError(f"Informe {nome} válido.")
+    if not math.isfinite(numero) or numero < 0:
+        raise ValueError(f"Informe {nome} válido.")
+    return numero
+
+@app.route("/vendas/<int:venda_id>/editar", methods=["GET", "POST"])
+@login_required
+def editar_recibo(venda_id):
+    venda = fetch_one("SELECT * FROM vendas WHERE id=?", (venda_id,))
+    if not venda:
+        flash("Recibo não encontrado.", "erro")
+        return redirect(url_for("vendas"))
+    if not recibo_editavel(venda):
+        flash("Esta venda possui registro fiscal e não pode ser editada ou excluída por aqui.", "erro")
+        return redirect(url_for("recibo_venda", venda_id=venda_id))
+    if request.method == "POST":
+        try:
+            with get_db() as db:
+                db.execute("BEGIN IMMEDIATE")
+                atual = db.execute("SELECT * FROM vendas WHERE id=?", (venda_id,)).fetchone()
+                if not atual or not recibo_editavel(atual):
+                    raise ValueError("O recibo foi alterado ou possui registro fiscal. Atualize a página.")
+                antigos = db.execute("SELECT * FROM venda_itens WHERE venda_id=?", (venda_id,)).fetchall()
+                devolvido = defaultdict(float)
+                custos = {}
+                for item in antigos:
+                    devolvido[item["produto_id"]] += item["quantidade"]
+                    custos[item["produto_id"]] = item["custo_unit"]
+                ids = request.form.getlist("produto_id[]")
+                quantidades = request.form.getlist("quantidade[]")
+                precos = request.form.getlist("preco_unit[]")
+                if not ids or not len(ids) == len(quantidades) == len(precos):
+                    raise ValueError("Adicione pelo menos um produto e confira os campos.")
+                itens, pedido = [], defaultdict(float)
+                subtotal = lucro_total = 0
+                for pid, qtd, preco in zip(ids, quantidades, precos):
+                    try:
+                        pid = int(pid)
+                    except ValueError:
+                        raise ValueError("Escolha um produto da lista.")
+                    prod = db.execute("SELECT * FROM produtos WHERE id=?", (pid,)).fetchone()
+                    if not prod or (not prod["ativo"] and pid not in devolvido):
+                        raise ValueError("Produto indisponível.")
+                    qtd = validar_numero_recibo(qtd, "uma quantidade")
+                    preco = validar_numero_recibo(preco, "um preço")
+                    if qtd <= 0:
+                        raise ValueError("A quantidade deve ser maior que zero.")
+                    pedido[pid] += qtd
+                    if pedido[pid] > float(prod["estoque"] or 0) + devolvido[pid] + 1e-9:
+                        raise ValueError(f"Estoque insuficiente para {prod['nome']}.")
+                    custo = custos.get(pid, float(prod["preco_custo"] or 0))
+                    total_item = round(qtd * preco, 2)
+                    lucro = (preco-custo)*qtd
+                    itens.append((pid, prod["nome"], qtd, preco, custo, total_item, lucro))
+                    subtotal += total_item
+                    lucro_total += lucro
+                desconto = validar_numero_recibo(request.form.get("desconto"), "um desconto")
+                if desconto > subtotal:
+                    raise ValueError("O desconto não pode ser maior que o subtotal.")
+                data = request.form.get("data") or today_str()
+                date.fromisoformat(data)
+                status = request.form.get("status")
+                forma = request.form.get("forma_pagamento")
+                nf_tipo = request.form.get("nf_tipo")
+                if status not in ("Pago", "Pendente") or forma not in ("Dinheiro", "Pix", "Cartão débito", "Cartão crédito", "Crediário", "Boleto") or nf_tipo not in ("NFC-e", "NF-e", "Sem nota agora"):
+                    raise ValueError("Confira o pagamento e o tipo fiscal.")
+                cliente_id = int(request.form.get("cliente_id") or 0)
+                nome = request.form.get("cliente_nome", "").strip()
+                if cliente_id:
+                    cliente = db.execute("SELECT nome FROM clientes WHERE id=?", (cliente_id,)).fetchone()
+                    if not cliente:
+                        raise ValueError("Cliente não encontrado.")
+                    nome = cliente["nome"]
+                elif nome:
+                    cliente_id = db.execute("INSERT INTO clientes (nome) VALUES (?)", (nome,)).lastrowid
+                for pid, qtd in devolvido.items():
+                    db.execute("UPDATE produtos SET estoque=estoque+? WHERE id=?", (qtd, pid))
+                db.execute("DELETE FROM venda_itens WHERE venda_id=?", (venda_id,))
+                db.execute("DELETE FROM estoque_mov WHERE origem='Venda' AND observacao=?", (f"Venda #{venda_id}",))
+                total = round(subtotal-desconto, 2)
+                db.execute("""UPDATE vendas SET data=?, cliente_id=?, cliente_nome=?, forma_pagamento=?,
+                    status=?, subtotal=?, desconto=?, total=?, lucro=?, observacao=?, nf_tipo=? WHERE id=?""",
+                    (data, cliente_id, nome, forma, status, subtotal, desconto, total, lucro_total,
+                     request.form.get("observacao", ""), nf_tipo, venda_id))
+                for pid, nome_prod, qtd, preco, custo, total_item, lucro in itens:
+                    db.execute("""INSERT INTO venda_itens (venda_id,produto_id,produto_nome,quantidade,preco_unit,custo_unit,total,lucro)
+                        VALUES (?,?,?,?,?,?,?,?)""", (venda_id,pid,nome_prod,qtd,preco,custo,total_item,lucro))
+                    db.execute("UPDATE produtos SET estoque=estoque-? WHERE id=?", (qtd,pid))
+                    db.execute("""INSERT INTO estoque_mov (data,produto_id,tipo,quantidade,custo_unit,valor_total,origem,observacao)
+                        VALUES (?,?,'Saída',?,?,?,'Venda',?)""", (data,pid,qtd,custo,qtd*custo,f"Venda #{venda_id}"))
+                db.execute("DELETE FROM financeiro WHERE referencia_tipo='Venda' AND referencia_id=?", (venda_id,))
+                db.execute("""INSERT INTO financeiro (data,tipo,descricao,valor,forma,status,pessoa,referencia_tipo,referencia_id)
+                    VALUES (?,'Entrada',?,?,?,?,?,'Venda',?)""", (data,f"Venda #{venda_id}",total,forma,status,nome,venda_id))
+            backup_db("recibo-editado")
+            flash("Recibo atualizado. Estoque e financeiro ajustados.", "ok")
+            return redirect(url_for("recibo_venda", venda_id=venda_id))
+        except ValueError as exc:
+            flash(str(exc), "erro")
+            # Reapresenta o formulário preenchido para permitir corrigir o erro.
+            venda = dict(venda)
+            for campo in ("data", "cliente_id", "cliente_nome", "forma_pagamento", "status", "desconto", "observacao", "nf_tipo"):
+                venda[campo] = request.form.get(campo, venda[campo])
+    clientes = fetch_all("SELECT * FROM clientes ORDER BY nome")
+    produtos = fetch_all("""SELECT * FROM produtos WHERE ativo=1 OR id IN
+        (SELECT produto_id FROM venda_itens WHERE venda_id=?) ORDER BY nome""", (venda_id,))
+    itens = [dict(i) for i in fetch_all("SELECT * FROM venda_itens WHERE venda_id=? ORDER BY id", (venda_id,))]
+    if request.method == "POST":
+        itens = [dict(produto_id=pid, quantidade=qtd, preco_unit=preco)
+                 for pid,qtd,preco in zip(request.form.getlist("produto_id[]"), request.form.getlist("quantidade[]"), request.form.getlist("preco_unit[]"))]
+    return render_template("venda_form.html", clientes=clientes, produtos=produtos,
+                           hoje=venda["data"], venda=venda, itens_iniciais=itens)
+
+@app.route("/vendas/<int:venda_id>/excluir", methods=["POST"])
+@login_required
+def excluir_recibo(venda_id):
+    with get_db() as db:
+        db.execute("BEGIN IMMEDIATE")
+        venda = db.execute("SELECT * FROM vendas WHERE id=?", (venda_id,)).fetchone()
+        if not venda:
+            flash("Recibo não encontrado ou já excluído.", "erro")
+            return redirect(url_for("vendas"))
+        if not recibo_editavel(venda):
+            flash("Esta venda possui registro fiscal e não pode ser excluída por aqui.", "erro")
+            return redirect(url_for("recibo_venda", venda_id=venda_id))
+        for item in db.execute("SELECT produto_id,quantidade FROM venda_itens WHERE venda_id=?", (venda_id,)).fetchall():
+            db.execute("UPDATE produtos SET estoque=estoque+? WHERE id=?", (item["quantidade"],item["produto_id"]))
+        db.execute("DELETE FROM estoque_mov WHERE origem='Venda' AND observacao=?", (f"Venda #{venda_id}",))
+        db.execute("DELETE FROM financeiro WHERE referencia_tipo='Venda' AND referencia_id=?", (venda_id,))
+        db.execute("DELETE FROM venda_itens WHERE venda_id=?", (venda_id,))
+        db.execute("DELETE FROM vendas WHERE id=?", (venda_id,))
+    backup_db("recibo-excluido")
+    flash("Recibo excluído. Produtos devolvidos ao estoque e lançamento financeiro removido.", "ok")
+    return redirect(url_for("vendas"))
 
 @app.route("/vendas/<int:venda_id>/recibo")
 @login_required

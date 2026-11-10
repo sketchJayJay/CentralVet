@@ -54,7 +54,7 @@
       <img src="{{ url_for('static', filename='centralvet_logo.png') }}" alt="CENTRALVET Agropecuária">
     </a>
     <div class="workspace-label"><span></span> GESTÃO AGROPECUÁRIA</div>
-    {% set section = {'recibo_venda':'vendas','editar_produto':'produtos','editar_cliente':'clientes','editar_fornecedor':'fornecedores','devolucao_form':'devolucoes','nova_devolucao':'devolucoes','devolucao_detalhe':'devolucoes','certificado_upload':'fiscal'}.get(request.endpoint, request.endpoint) %}
+    {% set section = {'editar_recibo':'vendas','recibo_venda':'vendas','editar_produto':'produtos','editar_cliente':'clientes','editar_fornecedor':'fornecedores','devolucao_form':'devolucoes','nova_devolucao':'devolucoes','devolucao_detalhe':'devolucoes','certificado_upload':'fiscal'}.get(request.endpoint, request.endpoint) %}
     {% macro navitem(endpoint, label, glyph) %}
       <a href="{{url_for(endpoint)}}" class="{{'active' if section == endpoint else ''}}" {% if section == endpoint %}aria-current="page"{% endif %}>{{icon(glyph)}}<span>{{label}}</span>{% if section == endpoint %}<i class="nav-dot"></i>{% endif %}</a>
     {% endmacro %}

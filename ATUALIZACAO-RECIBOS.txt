@@ -1,0 +1,17 @@
+CENTRALVET — Editar e excluir recibos
+
+Em Vendas, os botões Editar recibo e Excluir recibo aparecem nas vendas
+sem registro fiscal. Também estão disponíveis dentro do próprio recibo.
+
+Editar: permite mudar cliente, data, produtos, quantidades, preços,
+desconto, pagamento e observação. Atualiza estoque e financeiro.
+Excluir: solicita confirmação, remove a venda e seu lançamento financeiro
+e devolve os produtos ao estoque.
+
+Vendas com registro fiscal são preservadas e não podem ser alteradas
+por esses botões.
+
+Atualização no Coolify:
+Substitua os arquivos do projeto no repositório e faça o redeploy.
+Mantenha os volumes persistentes e as variáveis atuais.
+Esta atualização não inclui nem substitui banco de dados.

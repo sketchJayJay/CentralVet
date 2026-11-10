@@ -14,7 +14,12 @@
     <td>#{{v.id}}</td><td>{{v.data|brdate}}</td><td>{{v.cliente_nome or 'Consumidor'}}</td><td><b>{{v.total|money}}</b></td>
     <td><span class="pill {{ 'green' if v.status=='Pago' else 'warn' }}">{{v.status}}</span></td>
     <td>{{v.nf_tipo or '-' }}<br><small>{{v.nf_status}} {{v.nf_numero or ''}}</small></td>
-    <td><a class="btn secondary" href="{{ url_for('recibo_venda', venda_id=v.id) }}">Recibo</a></td>
+    <td><a class="btn secondary" href="{{ url_for('recibo_venda', venda_id=v.id) }}">Recibo</a>{% if recibo_editavel(v) %}
+<a class="btn secondary" href="{{ url_for('editar_recibo', venda_id=v.id) }}">Editar recibo</a>
+<form method="post" action="{{ url_for('excluir_recibo', venda_id=v.id) }}" style="display:inline" onsubmit="return confirm('Excluir o recibo #{{ v.id }} e a venda? Os produtos voltarão ao estoque e o lançamento financeiro será removido.');">
+  <button class="btn danger">Excluir recibo</button>
+</form>
+{% endif %}</td>
   </tr>
   {% else %}<tr><td colspan="7">Nenhuma venda ainda.</td></tr>{% endfor %}
   </tbody></table>
