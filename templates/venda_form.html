@@ -51,6 +51,15 @@
     <h2>Total da venda: <span id="totalView">R$ 0,00</span></h2>
     <p style="color:#b9d7ee">O sistema bloqueia venda maior que o estoque e baixa os produtos automaticamente ao salvar.</p>
   </div>
+  <section id="cashPayment" class="cash-payment" hidden aria-labelledby="cashTitle">
+    <div class="cash-entry"><h2 id="cashTitle">Dinheiro e troco</h2>
+      <label for="valorEntregue">Valor entregue pelo cliente (R$)</label>
+      <div class="cash-input-row"><input id="valorEntregue" name="valor_entregue" inputmode="decimal" placeholder="Ex.: 100,00" value="{{ (campos.valor_entregue|num) if campos.valor_entregue is number else (campos.valor_entregue or '') }}" oninput="atualizarTroco()" aria-describedby="cashHelp">
+      <button type="button" class="secondary" onclick="usarValorExato()">Valor exato</button></div>
+      <small id="cashHelp" class="search-hint">Informe para salvar na venda e imprimir na notinha.</small>
+    </div>
+    <div class="cash-change" aria-live="polite"><span>Troco a devolver</span><strong id="trocoView">—</strong><small id="trocoMessage">Informe quanto o cliente entregou.</small></div>
+  </section>
   <button class="green">{{ "Salvar alterações do recibo" if venda else "Salvar venda e gerar recibo" }}</button>
   <a class="btn secondary" href="{{ url_for('vendas') }}">Voltar</a>
 </form>
@@ -71,6 +80,7 @@
 {% endblock %}
 {% block scripts %}
 <script>
+let totalVendaCentavos = 0;
 function atualizarCrediario(alterouForma=false){
   const forma=document.getElementById('vendaForma');
   const status=document.getElementById('vendaStatus');
@@ -78,6 +88,7 @@ function atualizarCrediario(alterouForma=false){
   const aberto=forma.value==='Crediário'||status.value!=='Pago';
   document.getElementById('vencimento').required=aberto;
   document.getElementById('vendaCrediarioAviso').hidden=!aberto;
+  atualizarTroco();
 }
 function encontrarOpcao(listaId, valor){
   const opts = document.getElementById(listaId).options;
@@ -111,19 +122,47 @@ function addItem(){
   document.getElementById('items').appendChild(div.firstElementChild);
 }
 function calcTotal(){
-  let subtotal=0;
+  let subtotalCentavos=0;
   document.querySelectorAll('.item-row').forEach(row=>{
     const qtd=parseBR(row.querySelector('[name="quantidade[]"]').value);
     const preco=parseBR(row.querySelector('[name="preco_unit[]"]').value);
-    subtotal += qtd*preco;
+    subtotalCentavos += Math.round((qtd*preco + Number.EPSILON)*100);
   });
-  const desconto = Math.max(0, parseBR(document.getElementById('desconto').value));
-  document.getElementById('subtotalView').innerText = moeda(subtotal);
+  const descontoCentavos = Math.max(0, Math.round(parseBR(document.getElementById('desconto').value)*100));
+  const desconto = descontoCentavos/100;
+  document.getElementById('subtotalView').innerText = moeda(subtotalCentavos/100);
   document.getElementById('discountView').innerText = moeda(desconto);
   document.getElementById('discountSummary').hidden = desconto <= 0;
-  subtotal -= desconto;
-  document.getElementById('totalView').innerText = moeda(Math.max(0, subtotal));
+  totalVendaCentavos = Math.max(0, subtotalCentavos-descontoCentavos);
+  document.getElementById('totalView').innerText = moeda(totalVendaCentavos/100);
+  atualizarTroco();
 }
+function centavosDinheiro(texto){
+  let s=String(texto).trim().replace(/R\$/gi,'').replace(/\s/g,'');
+  if(!s)return null;
+  if(s.includes(','))s=s.replace(/\./g,'').replace(',','.');
+  if(!/^\d+(?:\.\d{1,2})?$/.test(s))return NaN;
+  const [inteiro,decimal='']=s.split('.');
+  const c=Number(inteiro)*100+Number(decimal.padEnd(2,'0'));
+  return Number.isSafeInteger(c)&&c<=99999999999?c:NaN;
+}
+function atualizarTroco(){
+  const panel=document.getElementById('cashPayment'),field=document.getElementById('valorEntregue');
+  const dinheiro=document.getElementById('vendaForma').value==='Dinheiro'&&document.getElementById('vendaStatus').value==='Pago';
+  panel.hidden=!dinheiro;field.disabled=!dinheiro;field.setCustomValidity('');
+  if(!dinheiro)return true;
+  const recebido=centavosDinheiro(field.value),view=document.getElementById('trocoView'),message=document.getElementById('trocoMessage');
+  panel.classList.remove('cash-insufficient');
+  if(recebido===null){view.innerText='—';message.innerText='Informe quanto o cliente entregou.';return true;}
+  if(!Number.isFinite(recebido)){
+    field.setCustomValidity('Informe um valor válido com até duas casas decimais.');
+    view.innerText='—';message.innerText='Confira o valor entregue.';panel.classList.add('cash-insufficient');return false;
+  }
+  const troco=recebido-totalVendaCentavos;
+  if(troco<0){field.setCustomValidity('O valor entregue é menor que o total da venda.');view.innerText='Faltam '+moeda(-troco/100);message.innerText='Confira o dinheiro recebido antes de salvar.';panel.classList.add('cash-insufficient');return false;}
+  view.innerText=moeda(troco/100);message.innerText='Dinheiro entregue e troco sairão na notinha.';return true;
+}
+function usarValorExato(){document.getElementById('valorEntregue').value=(totalVendaCentavos/100).toFixed(2).replace('.',',');atualizarTroco();}
 function validarVendaBusca(){
   let ok = true;
   document.querySelectorAll('.item-row').forEach(row=>{
@@ -150,6 +189,8 @@ function validarVendaBusca(){
     clienteRapido.setCustomValidity('Informe o cliente para a venda no crediário.');clienteRapido.reportValidity();return false;
   }
   clienteRapido.setCustomValidity('');
+  calcTotal();
+  if(!atualizarTroco()){document.getElementById('valorEntregue').reportValidity();return false;}
   return true;
 }
 document.getElementById('clienteNomeRapido').addEventListener('input',function(){this.setCustomValidity('');});
@@ -174,6 +215,7 @@ if(itensIniciais.length){
   }
   calcTotal();
 } else {addItem();}
+calcTotal();
 atualizarCrediario();
 </script>
 {% endblock %}

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'centralvet-financeiro-v4';
+const CACHE_NAME = 'centralvet-troco-v6-20261113';
 const STATIC_ASSETS = [
   '/static/style.css?v=20261110-financeiro',
   '/static/impressora_mptii.js?v=20261103',

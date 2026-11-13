@@ -75,6 +75,12 @@
   {% endif %}
   <h2 style="text-align:right">Total: {{ venda.total|money }}</h2>
   <p><b>Pagamento:</b> {{ venda.forma_pagamento }} • {{ venda.status }}</p>
+  {% if venda.forma_pagamento == 'Dinheiro' and venda.status == 'Pago' and venda.valor_entregue is not none and venda.troco is not none %}
+  <div class="receipt-cash-summary" style="text-align:right;margin:14px 0;padding:12px 0;border-top:1px solid #ddd;border-bottom:1px solid #ddd">
+    <p style="margin:4px 0">Dinheiro entregue pelo cliente: <b>{{ venda.valor_entregue|money }}</b></p>
+    <p style="margin:4px 0;font-size:18px"><b>Troco: {{ venda.troco|money }}</b></p>
+  </div>
+  {% endif %}
   {% if venda.observacao %}<p><b>Observação:</b> {{ venda.observacao }}</p>{% endif %}
   <hr>
   {% if venda.nf_status == 'Autorizada SEFAZ' %}

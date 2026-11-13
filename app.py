@@ -789,10 +789,12 @@ def emitir_nfce_sefaz_internal(venda_id):
     output_dir = os.path.join(FISCAL_NFCE_DIR, str(venda_id))
     os.makedirs(output_dir, exist_ok=True)
     payload = fiscal_engine_base_payload(cfg)
+    dinheiro_entregue, troco_venda = dinheiro_registrado(venda)
     payload.update({
         'action': 'emit_nfce', 'serie': serie, 'nNF': nnf, 'cNF': cNF, 'issue_datetime': issue_dt,
         'lote_id': f"65{venda_id}{nnf}", 'output_dir': output_dir, 'customer': customer,
-        'tPag': tpag, 'xPag': xpag, 'indPag': 0, 'valor_pago': float(venda['total'] or 0), 'troco': 0,
+        'tPag': tpag, 'xPag': xpag, 'indPag': 0, 'valor_pago': dinheiro_entregue if dinheiro_entregue is not None else float(venda['total'] or 0),
+        'troco': troco_venda if troco_venda is not None else 0,
         'informacoes_complementares': f"Venda #{venda_id} - CENTRALVET Agropecuaria",
         'items': fiscal_items,
     })
@@ -1033,7 +1035,8 @@ def init_db():
             ('nf_status', "TEXT DEFAULT 'Não emitida'"), ('nf_numero', 'TEXT'), ('nf_obs', 'TEXT'),
             ('nf_serie', 'TEXT'), ('nf_chave', 'TEXT'), ('nf_protocolo', 'TEXT'), ('nf_xml_path', 'TEXT'),
             ('nf_danfe_path', 'TEXT'), ('nf_cstat', 'TEXT'), ('nf_motivo', 'TEXT'), ('nf_autorizado_em', 'TEXT'),
-            ('nf_emissao_tentativa_em', 'TEXT'), ('created_at', 'TEXT')
+            ('nf_emissao_tentativa_em', 'TEXT'), ('created_at', 'TEXT'),
+            ('valor_entregue', 'REAL'), ('troco', 'REAL')
         ]:
             add_column(db, 'vendas', column, ddl)
         for column, ddl in [
@@ -1654,6 +1657,29 @@ def cliente_da_venda(db, precisa_identificar):
     return cliente_id,nome
 
 
+def calcular_dinheiro_troco(total, forma, status, valor_entregue):
+    # Em centavos: o valor entregue não altera a receita nem as baixas da compra.
+    if forma != 'Dinheiro' or status != 'Pago' or str(valor_entregue if valor_entregue is not None else '').strip() == '':
+        return None, None
+    entregue = fs.centavos(valor_entregue)
+    total_centavos = fs.centavos_db(total)
+    if entregue < total_centavos:
+        raise ValueError('O valor entregue pelo cliente é menor que o total da venda.')
+    return entregue / 100, (entregue - total_centavos) / 100
+
+
+def dinheiro_registrado(venda):
+    if not venda or venda['forma_pagamento'] != 'Dinheiro' or venda['status'] != 'Pago':
+        return None, None
+    try:
+        entregue, troco = venda['valor_entregue'], venda['troco']
+    except (KeyError, IndexError):
+        return None, None
+    if entregue is None or troco is None:
+        return None, None
+    return entregue, troco
+
+
 @app.route("/vendas/nova", methods=["GET","POST"])
 @login_required
 def nova_venda():
@@ -1710,11 +1736,13 @@ def nova_venda():
                 if desconto>subtotal:
                     raise ValueError("O desconto não pode ser maior que o subtotal.")
                 total=(subtotal-desconto)/100
+                valor_entregue, troco = calcular_dinheiro_troco(total, forma, status, request.form.get("valor_entregue"))
                 venda_id=db.execute("""INSERT INTO vendas
                     (data,cliente_id,cliente_nome,forma_pagamento,status,subtotal,desconto,total,lucro,observacao,nf_tipo,vencimento)
                     VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
                     (data,cliente_id,cliente_nome,forma,status,subtotal/100,desconto/100,total,round(lucro_total-desconto/100,2),
                      request.form.get("observacao",""),nf_tipo,vencimento)).lastrowid
+                db.execute("UPDATE vendas SET valor_entregue=?, troco=? WHERE id=?", (valor_entregue, troco, venda_id))
                 for pid,nome,qtd,preco,custo,total_item,lucro in itens:
                     db.execute("""INSERT INTO venda_itens
                         (venda_id,produto_id,produto_nome,quantidade,preco_unit,custo_unit,total,lucro)
@@ -1826,10 +1854,12 @@ def editar_recibo(venda_id):
                 db.execute("DELETE FROM venda_itens WHERE venda_id=?", (venda_id,))
                 db.execute("DELETE FROM estoque_mov WHERE origem='Venda' AND observacao=?", (f"Venda #{venda_id}",))
                 total = round(subtotal-desconto, 2)
+                valor_entregue, troco = calcular_dinheiro_troco(total, forma, status, request.form.get("valor_entregue"))
                 db.execute("""UPDATE vendas SET data=?, cliente_id=?, cliente_nome=?, forma_pagamento=?,
                     status=?, subtotal=?, desconto=?, total=?, lucro=?, observacao=?, nf_tipo=?, vencimento=? WHERE id=?""",
                     (data, cliente_id, nome, forma, status, subtotal, desconto, total, round(lucro_total-desconto,2),
                      request.form.get("observacao", ""), nf_tipo, vencimento, venda_id))
+                db.execute("UPDATE vendas SET valor_entregue=?, troco=? WHERE id=?", (valor_entregue, troco, venda_id))
                 for pid, nome_prod, qtd, preco, custo, total_item, lucro in itens:
                     db.execute("""INSERT INTO venda_itens (venda_id,produto_id,produto_nome,quantidade,preco_unit,custo_unit,total,lucro)
                         VALUES (?,?,?,?,?,?,?,?)""", (venda_id,pid,nome_prod,qtd,preco,custo,total_item,lucro))
@@ -1844,7 +1874,7 @@ def editar_recibo(venda_id):
             flash(str(exc), "erro")
             # Reapresenta o formulário preenchido para permitir corrigir o erro.
             venda = dict(venda)
-            for campo in ("data", "cliente_id", "cliente_nome", "forma_pagamento", "status", "desconto", "observacao", "nf_tipo", "vencimento"):
+            for campo in ("data", "cliente_id", "cliente_nome", "forma_pagamento", "status", "desconto", "observacao", "nf_tipo", "vencimento", "valor_entregue"):
                 venda[campo] = request.form.get(campo, venda[campo])
     clientes = fetch_all("SELECT * FROM clientes ORDER BY nome")
     produtos = fetch_all("""SELECT * FROM produtos WHERE ativo=1 OR id IN
@@ -2074,7 +2104,7 @@ def _nfce_xml_value(root, tag, default=''):
     return default
 
 
-def build_nfce_pos5890u_escpos(xml_path):
+def build_nfce_pos5890u_escpos(xml_path, venda=None):
     root = ET.parse(xml_path).getroot()
     def first(parent, tag):
         if parent is None: return None
@@ -2154,6 +2184,13 @@ def build_nfce_pos5890u_escpos(xml_path):
         try: vtxt=_thermal_money(float(val or 0))
         except Exception: vtxt=val
         out += _pos5890u_lr(pay_names.get(code,code or 'Pagamento'),vtxt).encode('ascii')+b'\n'
+    troco_xml = _nfce_xml_value(first(inf, 'pag'), 'vTroco', '')
+    entregue_salvo, _ = dinheiro_registrado(venda) if venda is not None else (None, None)
+    if troco_xml != '' or entregue_salvo is not None:
+        dinheiro_xml = sum(float(valor or 0) for codigo, valor in pays if codigo == '01')
+        if any(codigo == '01' for codigo, _ in pays):
+            out += _pos5890u_lr('DINHEIRO ENTREGUE', _thermal_money(dinheiro_xml)).encode('ascii')+b'\n'
+        out += _pos5890u_lr('TROCO', _thermal_money(float(troco_xml or 0))).encode('ascii')+b'\n'
     out += b'-'*32+b'\n'
     if consumer_doc or consumer_name:
         for line in _pos5890u_wrap(f'Consumidor: {consumer_name} {consumer_doc}'.strip()): out += line.encode('ascii')+b'\n'
@@ -2228,6 +2265,10 @@ def build_pos5890u_escpos(venda, itens):
     out += ESC + b"E" + b"\x00"
     for line in _pos5890u_wrap(f"Pagamento: {venda['forma_pagamento'] or '-'} - {venda['status'] or '-'}"):
         out += line.encode("ascii") + b"\n"
+    entregue, troco = dinheiro_registrado(venda)
+    if entregue is not None:
+        out += _pos5890u_lr('DINHEIRO ENTREGUE', _thermal_money(entregue)).encode('ascii') + b'\n'
+        out += _pos5890u_lr('TROCO', _thermal_money(troco)).encode('ascii') + b'\n'
     if venda['observacao']:
         for line in _pos5890u_wrap(f"Obs.: {venda['observacao']}"):
             out += line.encode("ascii") + b"\n"
@@ -2253,7 +2294,7 @@ def api_venda_pos5890u(venda_id):
         return jsonify({"ok": False, "erro": "Venda nao encontrada."}), 404
     itens = fetch_all("SELECT * FROM venda_itens WHERE venda_id=? ORDER BY id", (venda_id,))
     xml_path = fiscal_safe_file(venda['nf_xml_path']) if venda['nf_status'] == 'Autorizada SEFAZ' else None
-    payload = build_nfce_pos5890u_escpos(xml_path) if xml_path else build_pos5890u_escpos(venda, itens)
+    payload = build_nfce_pos5890u_escpos(xml_path, venda=venda) if xml_path else build_pos5890u_escpos(venda, itens)
     return jsonify({
         "ok": True,
         "modelo": "MPT-II",
@@ -2311,6 +2352,11 @@ def build_pos58_pdf(venda, itens):
         rows.append(("gap", 2.0))
     add_text(f"TOTAL: {_thermal_money(venda['total'])}", size=11.0, bold=True, align="right", gap_after=2.0)
     add_text(f"Pagamento: {venda['forma_pagamento'] or '-'} - {venda['status'] or '-'}", size=7.6, gap_after=1.5)
+    entregue, troco = dinheiro_registrado(venda)
+    if entregue is not None:
+        rows.append(("columns", "DINHEIRO ENTREGUE", _thermal_money(entregue), 7.2, normal_font, 11.0))
+        rows.append(("columns", "TROCO", _thermal_money(troco), 8.0, bold_font, 12.0))
+        rows.append(("gap", 2.0))
     if venda['observacao']:
         add_text(f"Obs.: {venda['observacao']}", size=7.2, gap_after=1.5)
     add_rule()

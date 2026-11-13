@@ -129,6 +129,10 @@
   {% endif %}
   <div class="total">TOTAL: {{ venda.total|money }}</div>
   <div><span class="bold">Pagamento:</span> {{ venda.forma_pagamento or '-' }} • {{ venda.status or '-' }}</div>
+  {% if venda.forma_pagamento == 'Dinheiro' and venda.status == 'Pago' and venda.valor_entregue is not none and venda.troco is not none %}
+  <div>DINHEIRO ENTREGUE: {{ venda.valor_entregue|money }}</div>
+  <div class="bold">TROCO: {{ venda.troco|money }}</div>
+  {% endif %}
   {% if venda.observacao %}<div><span class="bold">Obs.:</span> {{ venda.observacao }}</div>{% endif %}
   <div class="line"></div>
   <div class="center">Obrigado pela preferência.</div>

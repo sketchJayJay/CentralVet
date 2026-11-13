@@ -1,0 +1,15 @@
+CENTRALVET — DINHEIRO ENTREGUE E TROCO
+
+Na nova venda paga em Dinheiro, informe o Valor entregue pelo cliente. O troco é calculado na hora, usando o total após desconto. O botão Valor exato preenche o total da compra.
+
+Ao salvar, o valor entregue e o troco ficam registrados na venda e são impressos no recibo HTML, no PDF 58 mm e no cupom da MPT-II. Nas reimpressões, são usados os valores salvos.
+Exemplo: compra R$ 50,00; dinheiro entregue R$ 100,00; troco R$ 50,00. O financeiro registra R$ 50,00, que é o valor da compra.
+
+Quando o campo é preenchido com valor menor que a compra, o sistema solicita a correção antes de salvar a venda paga. Pix, cartões e vendas pendentes não usam o campo de troco. O preenchimento do dinheiro entregue é opcional; sem preenchimento não é criado registro de entrega/troco.
+
+Vendas antigas continuam disponíveis sem valores de dinheiro inventados. A atualização acrescenta duas colunas opcionais ao banco.
+O módulo NFC-e utiliza os campos de pagamento e troco já suportados pelo emissor. A reimpressão do DANFE térmico lê os valores do XML autorizado.
+
+Atualização: baixe um backup atual, envie os arquivos de código para o repositório e faça o redeploy no Coolify. Mantenha os volumes atuais /app/data e /app/certs e as variáveis já configuradas. Confira uma venda em dinheiro após atualizar.
+
+Validação em ambiente isolado: migração, vendas e edições, centavos, desconto, dinheiro exato, valor insuficiente, Pix/pendente, gravação no caixa, HTML, PDF de 58 mm, API e ESC/POS. Payload fiscal e XML testados por simulação, sem transmitir nota à SEFAZ.

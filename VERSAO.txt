@@ -38,3 +38,10 @@ Financeiro e crediário — 2026-11-10
 - Subtotal, desconto e total no recibo HTML, cupom 58 mm PDF e MPT-II ESC/POS.
 - DANFE NFC-e térmico mostra subtotal e desconto dos totais do XML autorizado.
 - Vendas sem desconto mantêm a apresentação compacta.
+
+2026-11-13 — Dinheiro entregue e troco
+- Cálculo imediato de troco na venda em dinheiro paga.
+- Valor entregue e troco salvos para reimpressão no HTML, PDF e MPT-II.
+- Validação de valor insuficiente, centavos e edição.
+- Financeiro registra apenas o total líquido da compra.
+- Migração aditiva: vendas antigas não recebem valores inventados.
