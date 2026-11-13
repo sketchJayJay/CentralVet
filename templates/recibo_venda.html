@@ -67,6 +67,12 @@
   <tr><td>{{i.produto_nome}}</td><td>{{i.quantidade|num}}</td><td>{{i.preco_unit|money}}</td><td>{{i.total|money}}</td></tr>
   {% endfor %}
   </tbody></table>
+  {% if (venda.desconto or 0)|float > 0 %}
+  <div class="receipt-discount-summary" style="text-align:right;margin:16px 0">
+    <p style="margin:4px 0">Subtotal: {{ venda.subtotal|money }}</p>
+    <p style="margin:4px 0;font-weight:700">Desconto: − {{ venda.desconto|money }}</p>
+  </div>
+  {% endif %}
   <h2 style="text-align:right">Total: {{ venda.total|money }}</h2>
   <p><b>Pagamento:</b> {{ venda.forma_pagamento }} • {{ venda.status }}</p>
   {% if venda.observacao %}<p><b>Observação:</b> {{ venda.observacao }}</p>{% endif %}

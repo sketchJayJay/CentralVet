@@ -32,3 +32,9 @@ Financeiro e crediário — 2026-11-10
 - Caixa e relatórios por valor e data de cada baixa.
 - Migração preservando os registros existentes.
 - Edição e exclusão de recibos mantidas e integradas ao histórico financeiro.
+
+2026-11-13 — Desconto destacado na notinha
+- Campo de desconto com orientação e resumo antes de salvar a venda.
+- Subtotal, desconto e total no recibo HTML, cupom 58 mm PDF e MPT-II ESC/POS.
+- DANFE NFC-e térmico mostra subtotal e desconto dos totais do XML autorizado.
+- Vendas sem desconto mantêm a apresentação compacta.

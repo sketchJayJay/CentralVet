@@ -28,7 +28,7 @@
     <div><label>Forma pagamento</label><select name="forma_pagamento" id="vendaForma" onchange="atualizarCrediario(true)"><option {% if campos.forma_pagamento == "Dinheiro" %}selected{% endif %}>Dinheiro</option><option {% if campos.forma_pagamento == "Pix" %}selected{% endif %}>Pix</option><option {% if campos.forma_pagamento == "Cartão débito" %}selected{% endif %}>Cartão débito</option><option {% if campos.forma_pagamento == "Cartão crédito" %}selected{% endif %}>Cartão crédito</option><option {% if campos.forma_pagamento == "Crediário" %}selected{% endif %}>Crediário</option><option {% if campos.forma_pagamento == "Boleto" %}selected{% endif %}>Boleto</option></select></div>
     <div><label>Tipo fiscal</label><select name="nf_tipo"><option {% if campos.nf_tipo == "NFC-e" %}selected{% endif %}>NFC-e</option><option {% if campos.nf_tipo == "NF-e" %}selected{% endif %}>NF-e</option><option {% if campos.nf_tipo == "Sem nota agora" %}selected{% endif %}>Sem nota agora</option></select></div>
     <div id="vendaVencimento"><label>Vencimento do crediário / conta</label><input type="date" name="vencimento" id="vencimento" value="{{ campos.vencimento or vencimento_padrao }}"></div>
-    <div><label>Desconto</label><input name="desconto" id="desconto" value="{{ campos.desconto if campos.desconto is defined else 0 }}" oninput="calcTotal()"></div>
+    <div><label for="desconto">Desconto na notinha (R$)</label><input name="desconto" id="desconto" inputmode="decimal" value="{{ campos.desconto if campos.desconto is defined else 0 }}" oninput="calcTotal()" aria-describedby="desconto-ajuda"><small class="search-hint" id="desconto-ajuda">Preencha o valor para destacar o desconto no recibo e na impressão.</small></div>
     <div><label>Observação</label><input name="observacao" value="{{ campos.observacao or '' }}"></div>
   </div>
 
@@ -46,6 +46,8 @@
   <div id="items"></div>
   <button type="button" class="secondary" onclick="addItem()">+ Adicionar produto</button>
   <div class="card dark" style="margin-top:16px">
+    <p style="margin:0 0 4px">Subtotal: <span id="subtotalView">R$ 0,00</span></p>
+    <p id="discountSummary" style="margin:0 0 12px" hidden>Desconto na notinha: − <span id="discountView">R$ 0,00</span></p>
     <h2>Total da venda: <span id="totalView">R$ 0,00</span></h2>
     <p style="color:#b9d7ee">O sistema bloqueia venda maior que o estoque e baixa os produtos automaticamente ao salvar.</p>
   </div>
@@ -115,7 +117,11 @@ function calcTotal(){
     const preco=parseBR(row.querySelector('[name="preco_unit[]"]').value);
     subtotal += qtd*preco;
   });
-  subtotal -= parseBR(document.getElementById('desconto').value);
+  const desconto = Math.max(0, parseBR(document.getElementById('desconto').value));
+  document.getElementById('subtotalView').innerText = moeda(subtotal);
+  document.getElementById('discountView').innerText = moeda(desconto);
+  document.getElementById('discountSummary').hidden = desconto <= 0;
+  subtotal -= desconto;
   document.getElementById('totalView').innerText = moeda(Math.max(0, subtotal));
 }
 function validarVendaBusca(){

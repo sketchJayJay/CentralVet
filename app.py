@@ -2093,6 +2093,8 @@ def build_nfce_pos5890u_escpos(xml_path):
     serie = _nfce_xml_value(ide, 'serie', '')
     dhEmi = _nfce_xml_value(ide, 'dhEmi', '')
     vNF = _nfce_xml_value(total, 'vNF', '0')
+    vProd = _nfce_xml_value(total, 'vProd', '0')
+    vDesc = _nfce_xml_value(total, 'vDesc', '0')
     protocolo = _nfce_xml_value(prot, 'nProt', '')
     xNome = _nfce_xml_value(emit, 'xNome', 'CENTRALVET AGROPECUARIA')
     cnpj = _nfce_xml_value(emit, 'CNPJ', '')
@@ -2142,7 +2144,11 @@ def build_nfce_pos5890u_escpos(xml_path):
         except Exception:
             qtd=d['qtd']; unit=d['unit']; tot=d['total']
         out += _pos5890u_lr(f'{qtd} x {unit}', tot).encode('ascii')+b'\n'
-    out += b'-'*32+b'\n' + ESC+b'E'+b'\x01'
+    out += b'-'*32+b'\n'
+    if float(vDesc or 0) > 0:
+        out += _pos5890u_lr('SUBTOTAL', _thermal_money(float(vProd or 0))).encode('ascii')+b'\n'
+        out += _pos5890u_lr('DESCONTO', '- ' + _thermal_money(float(vDesc or 0))).encode('ascii')+b'\n'
+    out += ESC+b'E'+b'\x01'
     out += _pos5890u_lr('TOTAL', _thermal_money(float(vNF or 0))).encode('ascii')+b'\n' + ESC+b'E'+b'\x00'
     for code,val in pays:
         try: vtxt=_thermal_money(float(val or 0))
@@ -2211,6 +2217,9 @@ def build_pos5890u_escpos(venda, itens):
         out += _pos5890u_lr(f"{qtd} x {unit}", total).encode("ascii") + b"\n"
 
     out += (b"-" * 32) + b"\n"
+    if float(venda['desconto'] or 0) > 0:
+        out += _pos5890u_lr('SUBTOTAL', _thermal_money(venda['subtotal'])).encode('ascii') + b'\n'
+        out += _pos5890u_lr('DESCONTO', '- ' + _thermal_money(venda['desconto'])).encode('ascii') + b'\n'
     out += ESC + b"E" + b"\x01"
     out += GS + b"!" + b"\x01"        # altura dupla, largura normal
     total_txt = _pos5890u_ascii(f"TOTAL {_thermal_money(venda['total'])}")
@@ -2296,6 +2305,10 @@ def build_pos58_pdf(venda, itens):
         rows.append(("gap", 1.3))
 
     add_rule()
+    if float(venda['desconto'] or 0) > 0:
+        rows.append(("columns", "SUBTOTAL", _thermal_money(venda['subtotal']), 7.8, normal_font, 11.0))
+        rows.append(("columns", "DESCONTO", '- ' + _thermal_money(venda['desconto']), 7.8, bold_font, 11.0))
+        rows.append(("gap", 2.0))
     add_text(f"TOTAL: {_thermal_money(venda['total'])}", size=11.0, bold=True, align="right", gap_after=2.0)
     add_text(f"Pagamento: {venda['forma_pagamento'] or '-'} - {venda['status'] or '-'}", size=7.6, gap_after=1.5)
     if venda['observacao']:

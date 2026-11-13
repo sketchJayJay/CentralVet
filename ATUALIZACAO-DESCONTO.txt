@@ -1,0 +1,12 @@
+CENTRALVET — DESCONTO NA NOTINHA
+
+Na nova venda ou na edição do recibo, preencha Desconto na notinha (R$).
+O resumo mostra subtotal, desconto e total antes de salvar.
+Quando houver desconto, ele será destacado automaticamente no recibo, no cupom PDF 58 mm e na impressão direta MPT-II.
+No DANFE NFC-e térmico, o destaque utiliza os totais do XML autorizado.
+Vendas anteriores que já têm desconto salvo também passam a exibir o valor ao reimprimir.
+Se o desconto for zero, o recibo continua compacto, sem a linha de desconto.
+
+Atualize os arquivos no repositório e faça o redeploy usando os mesmos volumes /app/data e /app/certs. Faça um backup atualizado antes da atualização.
+
+Validação em ambiente isolado: criação de vendas, totais, HTML, PDF 58 mm, API térmica e ESC/POS, além de prévia do resumo e telas de financeiro e relatórios.

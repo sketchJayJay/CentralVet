@@ -123,6 +123,10 @@
   </table>
 
   <div class="line"></div>
+  {% if (venda.desconto or 0)|float > 0 %}
+  <div>SUBTOTAL: {{ venda.subtotal|money }}</div>
+  <div class="bold">DESCONTO: − {{ venda.desconto|money }}</div>
+  {% endif %}
   <div class="total">TOTAL: {{ venda.total|money }}</div>
   <div><span class="bold">Pagamento:</span> {{ venda.forma_pagamento or '-' }} • {{ venda.status or '-' }}</div>
   {% if venda.observacao %}<div><span class="bold">Obs.:</span> {{ venda.observacao }}</div>{% endif %}
