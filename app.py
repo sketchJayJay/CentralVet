@@ -22,6 +22,7 @@ from reportlab.lib.utils import ImageReader
 from PIL import Image, ImageOps
 
 import financeiro_service as fs
+import pagamento_fiscal as pf
 from financeiro_routes import registrar_rotas
 
 APP_NAME = "CENTRALVET Agropecuária"
@@ -711,6 +712,25 @@ def _nfce_sale_tax(prod, cfg):
     return csosn, cfop
 
 
+def pagamento_fiscal_editavel(venda):
+    if cfg_val(venda, 'nf_protocolo') or cfg_val(venda, 'nf_chave'):
+        return False
+    status = cfg_val(venda, 'nf_status')
+    if status in ('', 'Não emitida'):
+        return not cfg_val(venda, 'nf_numero')
+    # Somente rejeições definitivas de pagamento: não altera retorno incerto.
+    return status == 'Rejeitada SEFAZ' and cfg_val(venda, 'nf_cstat') in {
+        '391', '392', '437', '496', '796', '961', '963'
+    }
+
+
+app.jinja_env.globals.update(
+    pagamento_fiscal_editavel=pagamento_fiscal_editavel,
+    pagamento_eletronico=lambda forma: _nfce_payment_code(forma)[0] in pf.ELETRONICOS,
+    bandeiras_pagamento=pf.BANDEIRAS,
+)
+
+
 def emitir_nfce_sefaz_internal(venda_id):
     cfg = fetch_one("SELECT * FROM fiscal_config WHERE id=1")
     venda = fetch_one("SELECT * FROM vendas WHERE id=?", (venda_id,))
@@ -729,6 +749,12 @@ def emitir_nfce_sefaz_internal(venda_id):
             'danfe_path': cfg_val(venda, 'nf_danfe_path')
         }
 
+    tpag, xpag = _nfce_payment_code(venda['forma_pagamento'])
+    try:
+        payment_details = pf.payload(venda, tpag)
+    except ValueError as exc:
+        return {'ok': False, 'authorized': False, 'error': str(exc)}
+
     cert = cert_runtime_status()
     if not cert.get('exists'):
         return {'ok': False, 'authorized': False, 'error': f"Certificado A1 não encontrado em {cert.get('path') or 'CERTIFICADO_PATH'}."}
@@ -742,7 +768,9 @@ def emitir_nfce_sefaz_internal(venda_id):
     saved_num = only_digits(cfg_val(venda, 'nf_numero'))
     nnf = int(saved_num) if saved_num else current_num
     issue_dt = cfg_val(venda, 'nf_emissao_tentativa_em')
-    if not issue_dt:
+    rejeicao_pagamento = (cfg_val(venda, 'nf_status') == 'Rejeitada SEFAZ'
+                          and cfg_val(venda, 'nf_cstat') in {'391', '392', '437', '496', '796', '961', '963'})
+    if not issue_dt or (rejeicao_pagamento and issue_dt[:10] < today_str()):
         issue_dt = datetime.now(ZoneInfo('America/Sao_Paulo')).isoformat(timespec='seconds')
         exec_sql("UPDATE vendas SET nf_emissao_tentativa_em=?, nf_numero=?, nf_serie=?, nf_tipo='NFC-e' WHERE id=?",
                  (issue_dt, str(nnf), str(serie), venda_id))
@@ -784,7 +812,6 @@ def emitir_nfce_sefaz_internal(venda_id):
         if cli:
             customer = {'nome': cli['nome'] or venda['cliente_nome'], 'documento': cli['cpf_cnpj'] or '', 'email': cli['email'] or ''}
 
-    tpag, xpag = _nfce_payment_code(venda['forma_pagamento'])
     cNF = str(int(hashlib.sha256(f"NFCE:{only_digits(cfg_val(cfg,'cnpj'))}:{serie}:{nnf}:{venda_id}".encode()).hexdigest()[:12], 16) % 100000000).zfill(8)
     output_dir = os.path.join(FISCAL_NFCE_DIR, str(venda_id))
     os.makedirs(output_dir, exist_ok=True)
@@ -795,6 +822,7 @@ def emitir_nfce_sefaz_internal(venda_id):
         'lote_id': f"65{venda_id}{nnf}", 'output_dir': output_dir, 'customer': customer,
         'tPag': tpag, 'xPag': xpag, 'indPag': 0, 'valor_pago': dinheiro_entregue if dinheiro_entregue is not None else float(venda['total'] or 0),
         'troco': troco_venda if troco_venda is not None else 0,
+        'payment_details': payment_details,
         'informacoes_complementares': f"Venda #{venda_id} - CENTRALVET Agropecuaria",
         'items': fiscal_items,
     })
@@ -1036,7 +1064,10 @@ def init_db():
             ('nf_serie', 'TEXT'), ('nf_chave', 'TEXT'), ('nf_protocolo', 'TEXT'), ('nf_xml_path', 'TEXT'),
             ('nf_danfe_path', 'TEXT'), ('nf_cstat', 'TEXT'), ('nf_motivo', 'TEXT'), ('nf_autorizado_em', 'TEXT'),
             ('nf_emissao_tentativa_em', 'TEXT'), ('created_at', 'TEXT'),
-            ('valor_entregue', 'REAL'), ('troco', 'REAL')
+            ('valor_entregue', 'REAL'), ('troco', 'REAL'),
+            ('pagamento_cnpj', 'TEXT'), ('pagamento_bandeira', 'TEXT'),
+            ('pagamento_autorizacao', 'TEXT'), ('pagamento_cnpj_recebedor', 'TEXT'),
+            ('pagamento_terminal', 'TEXT')
         ]:
             add_column(db, 'vendas', column, ddl)
         for column, ddl in [
@@ -1697,6 +1728,7 @@ def nova_venda():
                     status = "Pendente"
                 if status not in ("Pago","Pendente") or forma not in ("Dinheiro","Pix","Cartão débito","Cartão crédito","Crediário","Boleto"):
                     raise ValueError("Confira o pagamento da venda.")
+                pagamento = pf.validar(request.form, _nfce_payment_code(forma)[0])
                 nf_tipo = request.form.get("nf_tipo","NFC-e")
                 if nf_tipo not in ("NFC-e","NF-e","Sem nota agora"):
                     raise ValueError("Escolha o tipo fiscal.")
@@ -1743,6 +1775,7 @@ def nova_venda():
                     (data,cliente_id,cliente_nome,forma,status,subtotal/100,desconto/100,total,round(lucro_total-desconto/100,2),
                      request.form.get("observacao",""),nf_tipo,vencimento)).lastrowid
                 db.execute("UPDATE vendas SET valor_entregue=?, troco=? WHERE id=?", (valor_entregue, troco, venda_id))
+                pf.salvar(db, venda_id, pagamento)
                 for pid,nome,qtd,preco,custo,total_item,lucro in itens:
                     db.execute("""INSERT INTO venda_itens
                         (venda_id,produto_id,produto_nome,quantidade,preco_unit,custo_unit,total,lucro)
@@ -1847,6 +1880,7 @@ def editar_recibo(venda_id):
                     raise ValueError("Confira o pagamento e o tipo fiscal.")
                 if forma == "Crediário":
                     status = "Pendente"
+                pagamento = pf.validar(request.form, _nfce_payment_code(forma)[0])
                 cliente_id,nome = cliente_da_venda(db,status!="Pago")
                 vencimento = fs.data_valida(request.form.get("vencimento"),obrigatoria=status!="Pago")
                 for pid, qtd in devolvido.items():
@@ -1860,6 +1894,7 @@ def editar_recibo(venda_id):
                     (data, cliente_id, nome, forma, status, subtotal, desconto, total, round(lucro_total-desconto,2),
                      request.form.get("observacao", ""), nf_tipo, vencimento, venda_id))
                 db.execute("UPDATE vendas SET valor_entregue=?, troco=? WHERE id=?", (valor_entregue, troco, venda_id))
+                pf.salvar(db, venda_id, pagamento)
                 for pid, nome_prod, qtd, preco, custo, total_item, lucro in itens:
                     db.execute("""INSERT INTO venda_itens (venda_id,produto_id,produto_nome,quantidade,preco_unit,custo_unit,total,lucro)
                         VALUES (?,?,?,?,?,?,?,?)""", (venda_id,pid,nome_prod,qtd,preco,custo,total_item,lucro))
@@ -1876,6 +1911,8 @@ def editar_recibo(venda_id):
             venda = dict(venda)
             for campo in ("data", "cliente_id", "cliente_nome", "forma_pagamento", "status", "desconto", "observacao", "nf_tipo", "vencimento", "valor_entregue"):
                 venda[campo] = request.form.get(campo, venda[campo])
+            for campo in pf.CAMPOS:
+                venda[campo] = request.form.get(campo, venda.get(campo))
     clientes = fetch_all("SELECT * FROM clientes ORDER BY nome")
     produtos = fetch_all("""SELECT * FROM produtos WHERE ativo=1 OR id IN
         (SELECT produto_id FROM venda_itens WHERE venda_id=?) ORDER BY nome""", (venda_id,))
@@ -1914,6 +1951,29 @@ def excluir_recibo(venda_id):
     backup_db("recibo-excluido")
     flash("Recibo excluído. Produtos devolvidos ao estoque e lançamento financeiro removido.", "ok")
     return redirect(url_for("vendas"))
+
+@app.route("/vendas/<int:venda_id>/pagamento-fiscal", methods=["POST"])
+@login_required
+def salvar_pagamento_fiscal(venda_id):
+    try:
+        with get_db() as db:
+            db.execute("BEGIN IMMEDIATE")
+            venda = db.execute("SELECT * FROM vendas WHERE id=?", (venda_id,)).fetchone()
+            if not venda:
+                flash("Venda não encontrada.", "erro")
+                return redirect(url_for("vendas"))
+            if not pagamento_fiscal_editavel(venda):
+                raise ValueError("Os dados fiscais desta venda estão bloqueados. Confira o retorno da SEFAZ antes de alterar.")
+            tpag = _nfce_payment_code(venda['forma_pagamento'])[0]
+            if tpag not in pf.ELETRONICOS:
+                raise ValueError("Esta venda não foi registrada em cartão ou Pix.")
+            pf.salvar(db, venda_id, pf.validar(request.form, tpag))
+        backup_db("pagamento-fiscal")
+        flash("Dados do pagamento salvos. Agora você pode emitir a NFC-e desta venda.", "ok")
+    except ValueError as exc:
+        flash(str(exc), "erro")
+    return redirect(url_for("recibo_venda", venda_id=venda_id))
+
 
 @app.route("/vendas/<int:venda_id>/recibo")
 @login_required

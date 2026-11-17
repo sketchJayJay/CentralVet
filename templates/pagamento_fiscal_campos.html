@@ -1,0 +1,13 @@
+<details class="card fiscal-payment-fields" data-forma="{{ campos_pagamento.forma_pagamento or '' }}" {% if venda and venda.nf_cstat == '391' %}open{% endif %}>
+  <summary><b>Dados do pagamento para a NFC-e</b> <span class="cell-sub">{{ campos_pagamento.forma_pagamento or 'Cartão / Pix' }}</span></summary>
+  <p>Pagamento lançado manualmente, pela maquininha ou aplicativo separado do sistema.</p>
+  <p class="finance-help">Se precisar complementar a nota, copie os dados reais do comprovante. Preencha somente o que estiver disponível.</p>
+  <div class="row">
+    <div><label for="pagamento_cnpj">CNPJ da instituição de pagamento</label><input name="pagamento_cnpj" id="pagamento_cnpj" value="{{ campos_pagamento.pagamento_cnpj or '' }}" inputmode="numeric" maxlength="18" placeholder="Adquirente, subadquirente ou banco"></div>
+    <div data-card-brand><label for="pagamento_bandeira">Bandeira do cartão</label><select name="pagamento_bandeira" id="pagamento_bandeira"><option value="">Não informar</option>{% for codigo, nome in bandeiras_pagamento %}<option value="{{ codigo }}" {% if campos_pagamento.pagamento_bandeira == codigo %}selected{% endif %}>{{ nome }}</option>{% endfor %}</select></div>
+    <div><label for="pagamento_autorizacao">Código de autorização / identificador Pix</label><input name="pagamento_autorizacao" id="pagamento_autorizacao" value="{{ campos_pagamento.pagamento_autorizacao or '' }}" maxlength="128" placeholder="Código da operação no comprovante"></div>
+    <div><label for="pagamento_cnpj_recebedor">CNPJ do beneficiário do pagamento</label><input name="pagamento_cnpj_recebedor" id="pagamento_cnpj_recebedor" value="{{ campos_pagamento.pagamento_cnpj_recebedor or '' }}" inputmode="numeric" maxlength="18" placeholder="CNPJ de quem recebeu"></div>
+    <div><label for="pagamento_terminal">Identificador do terminal</label><input name="pagamento_terminal" id="pagamento_terminal" value="{{ campos_pagamento.pagamento_terminal or '' }}" maxlength="40" placeholder="Se constar no comprovante"></div>
+  </div>
+  {% if salvar_pagamento %}<button type="submit" class="btn secondary" style="margin-top:16px">Salvar dados do pagamento</button>{% endif %}
+</details>

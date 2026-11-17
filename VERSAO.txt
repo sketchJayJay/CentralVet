@@ -45,3 +45,11 @@ Financeiro e crediário — 2026-11-10
 - Validação de valor insuficiente, centavos e edição.
 - Financeiro registra apenas o total líquido da compra.
 - Migração aditiva: vendas antigas não recebem valores inventados.
+
+2026-11-17 — Correção da rejeição 391 / cartão e Pix
+- Grupo eletrônico enviado na NFC-e para crédito, débito e Pix (tpIntegra=2).
+- Dados opcionais do comprovante nas novas vendas e nos recibos rejeitados.
+- Complementação fiscal sem repetir estoque ou lançamentos financeiros.
+- CNPJ, limites dos campos e bloqueio de notas autorizadas validados.
+- Tentativas antigas rejeitadas por pagamento podem ser reenviadas com data atual.
+- Migração aditiva preservando o banco existente.

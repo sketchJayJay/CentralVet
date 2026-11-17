@@ -17,6 +17,7 @@ if (!file_exists($autoload)) {
     exit(2);
 }
 require_once $autoload;
+require_once __DIR__ . '/pagamento.php';
 
 use NFePHP\Common\Certificate;
 use NFePHP\NFe\Common\Standardize;
@@ -382,18 +383,7 @@ try {
         $mk->tagICMSTot(new stdClass());
         $mk->tagtransp((object)['modFrete' => 9]);
         $mk->tagpag((object)['vTroco' => valOrNull(f($p['troco'] ?? 0))]);
-        $mk->tagdetpag((object)[
-            'indPag' => (int)($p['indPag'] ?? 0),
-            'tPag' => s($p['tPag'] ?? '01') ?: '01',
-            'vPag' => round(f($p['valor_pago'] ?? ($sumProdutos - $sumDesconto)), 2),
-            'xPag' => s($p['xPag'] ?? '') ?: null,
-            'dPag' => null,
-            'tpIntegra' => null,
-            'CNPJPag' => null,
-            'UFPag' => null,
-            'CNPJReceb' => null,
-            'idTermPag' => null,
-        ]);
+        $mk->tagdetpag(centralvetPagamento($p, $sumProdutos - $sumDesconto));
         $mk->taginfadic((object)[
             'infAdFisco' => null,
             'infCpl' => s($p['informacoes_complementares'] ?? '') ?: null,

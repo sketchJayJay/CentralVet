@@ -34,6 +34,8 @@
 
   <p class="finance-notice" id="vendaCrediarioAviso" hidden>A venda ficará em Contas a receber, vinculada ao cliente. Depois, registre os pagamentos pela ficha dele.</p>
   {% if venda %}<p class="finance-help">Os recebimentos já registrados serão preservados. Se o valor da compra aumentar, a diferença ficará em aberto.</p>{% endif %}
+  {% set campos_pagamento = campos %}
+  {% include 'pagamento_fiscal_campos.html' %}
   <datalist id="produtosBusca">
     {% for p in produtos %}
     <option value="{{ p.nome }}{% if p.codigo %} — {{ p.codigo }}{% endif %} • estoque {{ p.estoque|num }} {{ p.unidade }}"
@@ -218,4 +220,5 @@ if(itensIniciais.length){
 calcTotal();
 atualizarCrediario();
 </script>
+<script src="{{ url_for('static', filename='pagamento_fiscal.js') }}?v=20261117"></script>
 {% endblock %}

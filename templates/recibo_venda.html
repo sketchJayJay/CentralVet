@@ -15,13 +15,24 @@
   {% else %}
     <form method="post" action="{{ url_for('emitir_fiscal', venda_id=venda.id) }}" style="display:inline" onsubmit="return confirmarEmissaoNFCe(this)">
       <input type="hidden" name="nf_tipo" value="NFC-e">
-      <button class="btn green" id="btn-emitir-nfce">Finalizar venda e emitir NFC-e</button>
+      <button class="btn green" id="btn-emitir-nfce">Emitir NFC-e desta venda</button>
     </form>
     <button type="button" class="btn secondary" id="btn-mptii" onclick="imprimirMPTII({{ venda.id }})">Imprimir recibo simples</button>
   {% endif %}
   <button type="button" class="btn secondary" onclick="conectarMPTII()">Conectar / atualizar impressoras</button>
   <button type="button" class="btn secondary" id="btn-teste-termica" onclick="testarMPTII()">Imprimir teste</button>
 </div>
+
+{% if pagamento_eletronico(venda.forma_pagamento) and pagamento_fiscal_editavel(venda) %}
+<form method="post" action="{{ url_for('salvar_pagamento_fiscal', venda_id=venda.id) }}" class="hide-print">
+  {% if venda.nf_cstat == '391' %}
+  <p class="finance-notice">A nota foi rejeitada por falta das informações do pagamento eletrônico. Esta versão já inclui esse grupo no envio. Confira os dados disponíveis e emita novamente.</p>
+  {% endif %}
+  {% set campos_pagamento = venda %}
+  {% set salvar_pagamento = true %}
+  {% include 'pagamento_fiscal_campos.html' %}
+</form>
+{% endif %}
 
 <div class="hide-print card" style="margin:12px 0;padding:14px 16px">
   <b>Impressora térmica:</b> MPT-II / MobilePrinter • USB • bobina 58 mm<br>
@@ -86,7 +97,7 @@
   {% if venda.nf_status == 'Autorizada SEFAZ' %}
   <p style="font-size:12px"><b>NFC-e autorizada pela SEFAZ.</b> Use “Imprimir DANFE NFC-e na MPT-II” para o documento fiscal com QR Code.</p>
   {% else %}
-  <p style="font-size:12px">Este recibo simples não tem valor fiscal. Para a venda fiscal, clique em <b>Finalizar venda e emitir NFC-e</b>.</p>
+  <p style="font-size:12px">Este recibo simples não tem valor fiscal. Para a venda fiscal, clique em <b>Emitir NFC-e desta venda</b>.</p>
   {% endif %}
 </div>
 
@@ -102,4 +113,5 @@ function confirmarEmissaoNFCe(form) {
 
 </script>
 <script src="{{ url_for('static', filename='impressora_mptii.js') }}?v=20261103"></script>
+<script src="{{ url_for('static', filename='pagamento_fiscal.js') }}?v=20261117"></script>
 {% endblock %}

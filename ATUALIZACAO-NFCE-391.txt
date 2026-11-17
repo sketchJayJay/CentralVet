@@ -1,0 +1,36 @@
+CENTRALVET — Correção NFC-e / cartão e Pix — 17/11/2026
+
+O QUE FOI CORRIGIDO
+O emissor não gerava o grupo de pagamento eletrônico, ocasionando a rejeição
+391. Cartão de crédito, cartão de débito e Pix agora enviam esse grupo com
+tpIntegra=2: pagamento lançado manualmente, sem integração TEF/POS.
+
+COMO USAR NAS VENDAS ANTIGAS
+1. Abra Vendas e depois o recibo da venda original.
+2. Se necessário, abra "Dados do pagamento para a NFC-e", copie os dados
+   reais do comprovante e clique em "Salvar dados do pagamento".
+3. Clique em "Emitir NFC-e desta venda" e confira o retorno da SEFAZ.
+O grupo obrigatório é incluído mesmo se os campos opcionais estiverem vazios.
+O sistema não inventa CNPJ, bandeira ou autorização para completar a nota.
+
+A complementação altera somente os dados fiscais do pagamento. O reenvio
+aproveita a venda existente e não repete a baixa de estoque nem recebimentos.
+Notas autorizadas e situações de retorno fiscal incerto bloqueiam a edição
+dos dados do pagamento. As regras de bloqueio do recibo original continuam.
+Rejeições de pagamento de dias anteriores recebem data atual da tentativa;
+a data da venda original e o número reservado são preservados.
+
+ATUALIZAR NO COOLIFY
+Antes de atualizar, baixe o backup do sistema. Substitua os arquivos do código
+e faça o redeploy pelo Dockerfile. Mantenha os volumes existentes de /app/data
+e /app/certs, as variáveis e o certificado A1. A atualização só acrescenta
+cinco colunas à tabela de vendas, sem substituir o banco.
+Este ZIP não contém banco de dados, certificados nem dependências de teste.
+
+VALIDAÇÃO
+Execute: python3 -m unittest discover -s tests -v
+Com as dependências Composer instaladas: php tests/test_pagamento_xml.php
+Validação realizada: 12 testes de aplicação e 12 casos de XML de pagamento
+contra o schema real distribuído com o NFePHP 5.2.8.
+Os testes usam dados temporários e simulam o retorno fiscal; não emitem notas.
+A autorização real depende do retorno da SEFAZ após o reenvio no sistema.
