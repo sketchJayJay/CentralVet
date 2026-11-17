@@ -23,6 +23,10 @@ from PIL import Image, ImageOps
 
 import financeiro_service as fs
 import pagamento_fiscal as pf
+import conferencia_fiscal as cf
+import nfce_emissao as ne
+from conferencia_fiscal_routes import registrar_rotas as registrar_conferencia_fiscal
+from nfce_lote_routes import registrar_rotas as registrar_nfce_lote
 from financeiro_routes import registrar_rotas
 
 APP_NAME = "CENTRALVET Agropecuária"
@@ -518,7 +522,7 @@ def fiscal_tpamb(cfg):
 def run_fiscal_engine(payload, timeout=90):
     cli = os.path.join(app.root_path, "fiscal_engine", "nfe_cli.php")
     if not os.path.isfile(cli):
-        return {"ok": False, "authorized": False, "error": "Motor fiscal interno não encontrado no servidor."}
+        return {"ok": False, "authorized": False, "error": "Motor fiscal interno não encontrado no servidor.", "transmission_started":False}
     try:
         proc = subprocess.run(
             ["php", cli],
@@ -529,9 +533,9 @@ def run_fiscal_engine(payload, timeout=90):
             cwd=app.root_path,
         )
     except FileNotFoundError:
-        return {"ok": False, "authorized": False, "error": "PHP/NFePHP não instalado. Faça o deploy usando o Dockerfile desta versão."}
+        return {"ok": False, "authorized": False, "error": "PHP/NFePHP não instalado. Faça o deploy usando o Dockerfile desta versão.", "transmission_started":False}
     except subprocess.TimeoutExpired:
-        return {"ok": False, "authorized": False, "error": "A SEFAZ não respondeu dentro do tempo limite. Tente novamente; o sistema manterá a mesma numeração."}
+        return {"ok": False, "authorized": False, "error": "A SEFAZ não respondeu dentro do tempo limite. Consulte a situação desta tentativa antes de reenviar."}
     raw = (proc.stdout or "").strip()
     try:
         data = json.loads(raw) if raw else {}
@@ -731,7 +735,7 @@ app.jinja_env.globals.update(
 )
 
 
-def emitir_nfce_sefaz_internal(venda_id):
+def emitir_nfce_sefaz_internal(venda_id, lote_id=None, usuario=''):
     cfg = fetch_one("SELECT * FROM fiscal_config WHERE id=1")
     venda = fetch_one("SELECT * FROM vendas WHERE id=?", (venda_id,))
     itens = fetch_all("""
@@ -749,6 +753,12 @@ def emitir_nfce_sefaz_internal(venda_id):
             'danfe_path': cfg_val(venda, 'nf_danfe_path')
         }
 
+    with get_db() as db:
+        impedimento=ne.bloqueio(db,venda)
+    if impedimento:
+        return {'ok':False,'authorized':False,'error':impedimento,'state':'Bloqueada'}
+    assinatura_inicial=ne.assinatura(venda,itens)
+
     tpag, xpag = _nfce_payment_code(venda['forma_pagamento'])
     try:
         payment_details = pf.payload(venda, tpag)
@@ -762,20 +772,6 @@ def emitir_nfce_sefaz_internal(venda_id):
         return {'ok': False, 'authorized': False, 'error': 'A variável CERTIFICADO_SENHA não está configurada no Coolify.'}
     if not cfg_val(cfg, 'csc_id') or not cfg_val(cfg, 'csc_token'):
         return {'ok': False, 'authorized': False, 'error': 'CSC/ID Token da NFC-e não estão configurados.'}
-
-    serie = int(only_digits(cfg_val(cfg, 'nfce_serie') or '1') or 1)
-    current_num = int(only_digits(cfg_val(cfg, 'nfce_numero_inicial') or '1') or 1)
-    saved_num = only_digits(cfg_val(venda, 'nf_numero'))
-    nnf = int(saved_num) if saved_num else current_num
-    issue_dt = cfg_val(venda, 'nf_emissao_tentativa_em')
-    rejeicao_pagamento = (cfg_val(venda, 'nf_status') == 'Rejeitada SEFAZ'
-                          and cfg_val(venda, 'nf_cstat') in {'391', '392', '437', '496', '796', '961', '963'})
-    if not issue_dt or (rejeicao_pagamento and issue_dt[:10] < today_str()):
-        issue_dt = datetime.now(ZoneInfo('America/Sao_Paulo')).isoformat(timespec='seconds')
-        exec_sql("UPDATE vendas SET nf_emissao_tentativa_em=?, nf_numero=?, nf_serie=?, nf_tipo='NFC-e' WHERE id=?",
-                 (issue_dt, str(nnf), str(serie), venda_id))
-    else:
-        exec_sql("UPDATE vendas SET nf_numero=?, nf_serie=?, nf_tipo='NFC-e' WHERE id=?", (str(nnf), str(serie), venda_id))
 
     subtotal = sum(float(i['total'] or 0) for i in itens)
     desconto_total = max(0.0, float(venda['desconto'] or 0))
@@ -812,11 +808,15 @@ def emitir_nfce_sefaz_internal(venda_id):
         if cli:
             customer = {'nome': cli['nome'] or venda['cliente_nome'], 'documento': cli['cpf_cnpj'] or '', 'email': cli['email'] or ''}
 
+    try:
+        payload = fiscal_engine_base_payload(cfg)
+        dinheiro_entregue, troco_venda = dinheiro_registrado(venda)
+        tentativa=ne.reservar(get_db,venda_id,assinatura_inicial,FISCAL_NFCE_DIR,lote_id,usuario)
+    except ValueError as exc:
+        return {'ok':False,'authorized':False,'error':str(exc),'state':'Bloqueada'}
+    serie,nnf,issue_dt=tentativa['serie'],tentativa['numero'],tentativa['emissao_em']
     cNF = str(int(hashlib.sha256(f"NFCE:{only_digits(cfg_val(cfg,'cnpj'))}:{serie}:{nnf}:{venda_id}".encode()).hexdigest()[:12], 16) % 100000000).zfill(8)
-    output_dir = os.path.join(FISCAL_NFCE_DIR, str(venda_id))
-    os.makedirs(output_dir, exist_ok=True)
-    payload = fiscal_engine_base_payload(cfg)
-    dinheiro_entregue, troco_venda = dinheiro_registrado(venda)
+    output_dir = tentativa['diretorio']
     payload.update({
         'action': 'emit_nfce', 'serie': serie, 'nNF': nnf, 'cNF': cNF, 'issue_datetime': issue_dt,
         'lote_id': f"65{venda_id}{nnf}", 'output_dir': output_dir, 'customer': customer,
@@ -826,31 +826,56 @@ def emitir_nfce_sefaz_internal(venda_id):
         'informacoes_complementares': f"Venda #{venda_id} - CENTRALVET Agropecuaria",
         'items': fiscal_items,
     })
-    result = run_fiscal_engine(payload, timeout=120)
-    now = datetime.now(ZoneInfo('America/Sao_Paulo')).isoformat(timespec='seconds')
-    if result.get('authorized'):
-        with get_db() as db:
-            db.execute("""
-                UPDATE vendas SET nf_tipo='NFC-e', nf_status='Autorizada SEFAZ', nf_numero=?, nf_serie=?,
-                    nf_chave=?, nf_protocolo=?, nf_xml_path=?, nf_danfe_path=?, nf_cstat=?, nf_motivo=?,
-                    nf_autorizado_em=?, nf_obs=? WHERE id=?
-            """, (str(nnf), str(serie), result.get('chave') or '', result.get('protocolo') or '',
-                  result.get('xml_path') or '', result.get('danfe_path') or '', result.get('cStat') or '100',
-                  result.get('xMotivo') or 'Autorizado o uso da NFC-e', now,
-                  'NFC-e autorizada diretamente pela SEFAZ/MG.', venda_id))
-            db.execute("UPDATE fiscal_config SET nfce_numero_inicial=? WHERE id=1", (str(max(current_num, nnf + 1)),))
-            db.commit()
-        backup_db('nfce-autorizada')
+    try:
+        os.makedirs(output_dir, exist_ok=True)
+    except OSError as exc:
+        result={'ok':False,'authorized':False,'error':f'Não foi possível criar a pasta fiscal: {exc}','transmission_started':False}
     else:
-        motivo = result.get('xMotivo') or result.get('error') or 'Falha não identificada na autorização da NFC-e.'
-        cstat = str(result.get('cStat') or '')
-        with get_db() as db:
-            db.execute("""
-                UPDATE vendas SET nf_tipo='NFC-e', nf_status=?, nf_numero=?, nf_serie=?, nf_cstat=?, nf_motivo=?, nf_obs=? WHERE id=?
-            """, ('Rejeitada SEFAZ' if cstat else 'Falha antes do envio à SEFAZ', str(nnf), str(serie), cstat, motivo, motivo, venda_id))
-            db.commit()
-        backup_db('nfce-falha')
+        try:
+            result = run_fiscal_engine(payload, timeout=120)
+        except Exception as exc:
+            result={'ok':False,'authorized':False,'error':f'Falha na comunicação fiscal: {exc}'}
+    result=ne.finalizar(get_db,tentativa,result)
+    backup_db('nfce-autorizada' if result.get('authorized') else 'nfce-tentativa')
     return result
+
+
+def consultar_nfce_tentativa(tentativa_id):
+    tentativa=fetch_one('SELECT * FROM nfce_tentativas WHERE id=?',(tentativa_id,))
+    if not tentativa:
+        return {'ok':False,'authorized':False,'error':'Tentativa não encontrada.'}
+    tentativa=dict(tentativa)
+    diario=ne.diario(tentativa)
+    if tentativa['concluida_em'] is None and diario.get('authorized') and diario.get('protocolo'):
+        result=ne.finalizar(get_db,tentativa,diario)
+        backup_db('nfce-autorizacao-recuperada')
+        return result
+    chave=tentativa['chave'] or diario.get('chave') or ''
+    assinado=tentativa['xml_assinado_path'] or diario.get('signed_xml_path') or ''
+    if len(only_digits(chave))!=44 or not fiscal_safe_file(assinado):
+        return {'ok':False,'authorized':False,'error':'Esta tentativa não tem chave e XML assinado disponíveis. Confira o retorno fiscal antes de reenviar.'}
+    cfg=fetch_one('SELECT * FROM fiscal_config WHERE id=1')
+    payload=fiscal_engine_base_payload(cfg)
+    payload.update(action='consult_nfce',chave=chave,signed_xml_path=assinado)
+    result=run_fiscal_engine(payload,timeout=60)
+    if result.get('authorized') and (result.get('chave')!=chave or not result.get('protocolo')):
+        return {'ok':False,'authorized':False,'error':'A consulta não retornou protocolo válido para a chave desta tentativa.'}
+    if result.get('authorized'):
+        result=ne.finalizar(get_db,tentativa,result)
+        backup_db('nfce-consultada')
+    else:
+        result['xMotivo']=(result.get('xMotivo') or result.get('error') or 'Situação não confirmada.')+' A data e a numeração foram preservadas; não houve novo envio de emissão.'
+    return result
+
+
+def validar_config_nfce_lote():
+    cfg=fetch_one('SELECT * FROM fiscal_config WHERE id=1')
+    cert=cert_runtime_status()
+    if not cert.get('exists') or not cert.get('has_password'):
+        return 'Confira o certificado A1 e sua senha antes de emitir o lote.'
+    if not cfg or not cfg_val(cfg,'csc_id') or not cfg_val(cfg,'csc_token'):
+        return 'Confira CSC e ID Token na configuração fiscal antes de emitir o lote.'
+    return ''
 
 
 def init_db():
@@ -1139,6 +1164,8 @@ def init_db():
             WHERE id=1
         """, FISCAL_DEFAULTS)
         fs.migrar(db, add_column)
+        cf.migrar(db)
+        ne.migrar(db)
         db.commit()
 
 # Antes de criar as tabelas, tenta recuperar a cópia espelho persistente.
@@ -1986,7 +2013,8 @@ def recibo_venda(venda_id):
     with get_db() as db:
         financeira = db.execute("SELECT id FROM financeiro WHERE referencia_tipo='Venda' AND referencia_id=?",(venda_id,)).fetchone()
         conta_venda = fs.conta(db,financeira["id"],today_str()) if financeira else None
-    return render_template("recibo_venda.html", venda=venda, itens=itens,conta_venda=conta_venda)
+    tentativas=fetch_all("SELECT * FROM nfce_tentativas WHERE venda_id=? AND estado!='Data ajustada' ORDER BY id DESC LIMIT 10",(venda_id,))
+    return render_template("recibo_venda.html", venda=venda, itens=itens,conta_venda=conta_venda,tentativas_fiscais=tentativas)
 
 def _thermal_wrap(text, font_name, font_size, max_width):
     text = str(text or "").strip()
@@ -2518,11 +2546,11 @@ def emitir_fiscal(venda_id):
     if nf_tipo != "NFC-e":
         flash("Para venda de balcão, use NFC-e. A NF-e modelo 55 continua no fluxo de devolução.", "erro")
         return redirect(url_for("recibo_venda", venda_id=venda_id))
-    result = emitir_nfce_sefaz_internal(venda_id)
+    result = emitir_nfce_sefaz_internal(venda_id,usuario=session.get('user') or ADMIN_USER)
     if result.get('authorized'):
         flash(f"NFC-e autorizada ✅ Nº {fetch_one('SELECT nf_numero FROM vendas WHERE id=?',(venda_id,))['nf_numero']} • cStat {result.get('cStat') or '100'}", 'ok')
     else:
-        prefix = 'SEFAZ rejeitou a NFC-e' if result.get('cStat') else 'Falha antes do envio à SEFAZ'
+        prefix = 'Retorno incerto da SEFAZ: consulte a tentativa' if result.get('state')=='Incerta' else ('SEFAZ rejeitou a NFC-e' if result.get('cStat') else 'Emissão não concluída')
         flash(f"{prefix}: cStat {result.get('cStat') or '-'} - {result.get('xMotivo') or result.get('error') or 'erro desconhecido'}", 'erro')
     return redirect(url_for("recibo_venda", venda_id=venda_id))
 
@@ -2565,6 +2593,11 @@ def api_produtos():
 
 # ---------------- Financeiro ----------------
 registrar_rotas(app, get_db, backup_db, login_required, today_str)
+registrar_conferencia_fiscal(app, get_db, backup_db, login_required, today_str)
+registrar_nfce_lote(app,get_db,backup_db,
+    lambda venda_id,lote_id,usuario: emitir_nfce_sefaz_internal(venda_id,lote_id,usuario),
+    lambda tentativa_id: consultar_nfce_tentativa(tentativa_id),
+    lambda: validar_config_nfce_lote())
 
 
 # ---------------- Fiscal / XML ----------------

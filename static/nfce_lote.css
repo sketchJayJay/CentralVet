@@ -1,0 +1,7 @@
+.nfce-lote .conferencia-filtros{display:grid;grid-template-columns:1fr 1fr auto;align-items:end;gap:14px}
+.nfce-lote .conferencia-filtros>small{grid-column:1/-1}
+.nfce-lote progress{width:100%;height:20px;accent-color:#173f34}
+.nfce-lote [data-retorno] form{margin-top:9px}
+.nfce-lote [data-estado]{font-weight:600}
+.nfce-lote #nfceAviso{overflow-wrap:anywhere}
+@media(max-width:560px){.nfce-lote .conferencia-filtros{grid-template-columns:1fr}.nfce-lote .actions{display:flex;flex-direction:column;align-items:stretch}.nfce-lote .actions .btn,.nfce-lote .actions button{width:100%}}

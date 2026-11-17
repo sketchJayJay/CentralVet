@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block extra_head %}<link rel="stylesheet" href="{{ url_for('static', filename='conferencia_fiscal.css') }}?v=20261117"><link rel="stylesheet" href="{{ url_for('static', filename='nfce_lote.css') }}?v=20261117">{% endblock %}
+{% block content %}
+<div class="conferencia-fiscal nfce-lote">
+  <section class="hero"><span class="badge">NFC-e em lote</span><h1>Emitir com a data de hoje</h1><p>Selecione as vendas pendentes. O sistema gera uma NFC-e por venda, com a data e a hora atualizadas no início de cada envio.</p><a class="btn secondary" href="{{ url_for('vendas') }}">Voltar às vendas</a></section>
+  <div class="card"><b>Horário do servidor, em Brasília</b><p>{{ agora[:10]|brdate }} às {{ agora[11:19] }} · America/Sao_Paulo</p><small>A data original da venda, os recebimentos e o estoque são preservados. O ajuste é da data fiscal de emissão.</small></div>
+  <form method="get" class="card conferencia-filtros"><div><label for="loteInicio">Vendas desde</label><input type="date" name="inicio" id="loteInicio" value="{{ inicio }}"></div><div><label for="loteFim">Até</label><input type="date" name="fim" id="loteFim" value="{{ fim }}"></div><button>Filtrar</button><small>Deixe as datas vazias para ver todas as vendas disponíveis. São incluídas vendas pagas destinadas à NFC-e.</small></form>
+  <form method="post" action="{{ url_for('nfce_datas_hoje') }}" id="nfceSelecao">
+    <input type="hidden" name="csrf_token" value="{{ nfce_csrf() }}">
+    <div class="card"><div class="conferencia-acoes"><label><input type="checkbox" id="nfceTodas" {% if rows %}checked{% endif %}>Selecionar todas</label><b id="nfceSelecionadas">{{ rows|length }} vendas selecionadas</b></div>
+      <div class="table-wrap"><table><thead><tr><th>Selecionar</th><th>Venda</th><th>Data da venda</th><th>Cliente</th><th>Pagamento</th><th>Total</th><th>Data fiscal anterior / preparada</th><th>Fiscal</th></tr></thead><tbody>
+        {% for v in rows %}<tr><td><input type="checkbox" name="venda_id" value="{{ v.id }}" checked aria-label="Selecionar venda {{ v.id }}"></td><td><a href="{{ url_for('recibo_venda',venda_id=v.id) }}" target="_blank" rel="noopener">#{{ v.id }}</a></td><td>{{ v.data|brdate }}</td><td>{{ v.cliente_nome or 'Consumidor' }}</td><td>{{ v.forma_pagamento }}</td><td>{{ v.total|money }}</td><td>{% if v.nf_emissao_tentativa_em %}{{ v.nf_emissao_tentativa_em[:10]|brdate }} {{ v.nf_emissao_tentativa_em[11:19] }}{% else %}Será definida no envio{% endif %}</td><td>{{ v.nf_status or 'Não emitida' }}{% if v.nf_cstat %}<small class="cell-sub">cStat {{ v.nf_cstat }}</small>{% endif %}</td></tr>{% else %}<tr><td colspan="8">Nenhuma venda disponível para emitir nesse período.</td></tr>{% endfor %}
+      </tbody></table></div>
+      <div class="actions" style="margin-top:18px"><button type="submit" class="secondary" data-operacao="datas" {% if not rows %}disabled{% endif %}>Atualizar datas fiscais para hoje</button><button type="submit" class="green" formaction="{{ url_for('criar_nfce_lote') }}" data-operacao="emitir" {% if not rows %}disabled{% endif %}>Emitir todas as selecionadas com data de hoje</button></div>
+      <p id="nfceSelecaoAjuda">O botão de datas prepara o horário fiscal. O botão de emissão inicia o envio das notas para a SEFAZ.</p>
+    </div>
+  </form>
+  {% if bloqueadas %}<details class="card"><summary><b>{{ bloqueadas|length }} venda(s) precisam de conferência fiscal</b></summary><p>Vendas com retorno incerto ou outra situação protegida não recebem nova data automaticamente.</p><div class="table-wrap"><table><thead><tr><th>Venda</th><th>Motivo</th></tr></thead><tbody>{% for v in bloqueadas %}<tr><td><a href="{{ url_for('recibo_venda',venda_id=v.id) }}#tentativas-fiscais">#{{ v.id }}</a></td><td>{{ v.bloqueio }}</td></tr>{% endfor %}</tbody></table></div></details>{% endif %}
+  <div class="card"><h2>Lotes preparados</h2><div class="table-wrap"><table><thead><tr><th>Lote</th><th>Preparado em</th><th>Situação</th><th></th></tr></thead><tbody>{% for l in lotes %}<tr><td>#{{ l.id }}</td><td>{{ l.criado_em[:10]|brdate }} {{ l.criado_em[11:19] }}</td><td>{{ l.estado }}</td><td><a class="btn secondary" href="{{ url_for('ver_nfce_lote',lote_id=l.id) }}">Abrir lote</a></td></tr>{% else %}<tr><td colspan="4">Os lotes aparecerão aqui.</td></tr>{% endfor %}</tbody></table></div></div>
+</div>
+<script src="{{ url_for('static', filename='nfce_lote.js') }}?v=20261117"></script>
+{% endblock %}

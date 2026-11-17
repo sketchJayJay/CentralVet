@@ -1,8 +1,12 @@
-const CACHE_NAME = 'centralvet-nfce-pagamento-v7-20261117';
+const CACHE_NAME = 'centralvet-nfce-lote-v9-20261117';
 const STATIC_ASSETS = [
   '/static/style.css?v=20261110-financeiro',
   '/static/impressora_mptii.js?v=20261103',
   '/static/pagamento_fiscal.js?v=20261117',
+  '/static/conferencia_fiscal.css?v=20261117',
+  '/static/conferencia_fiscal.js?v=20261117',
+  '/static/nfce_lote.css?v=20261117',
+  '/static/nfce_lote.js?v=20261117',
   '/static/centralvet_logo.png',
   '/static/icon-192.png',
   '/static/icon-512.png',

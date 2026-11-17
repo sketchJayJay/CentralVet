@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>{{ title or app_name or "CENTRALVET" }}</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=20261110-financeiro">
+  {% block extra_head %}{% endblock %}
   <link rel="manifest" href="{{ url_for('manifest_json') }}">
   <meta name="theme-color" content="#123d33">
   <meta name="application-name" content="CENTRALVET">
@@ -55,6 +56,8 @@
     </a>
     <div class="workspace-label"><span></span> GESTÃO AGROPECUÁRIA</div>
     {% set section = {'crediario_cliente':'contas_receber','nova_conta':'financeiro','editar_conta':'financeiro','ver_conta':'financeiro','editar_recibo':'vendas','recibo_venda':'vendas','editar_produto':'produtos','editar_cliente':'clientes','editar_fornecedor':'fornecedores','devolucao_form':'devolucoes','nova_devolucao':'devolucoes','devolucao_detalhe':'devolucoes','certificado_upload':'fiscal'}.get(request.endpoint, request.endpoint) %}
+    {% if request.endpoint in ('conferencia_fiscal','preparar_conferencia_fiscal','ver_conferencia_fiscal','exportar_conferencia_fiscal') %}{% set section = 'vendas' %}{% endif %}
+    {% if request.endpoint in ('nfce_lote','ver_nfce_lote','nfce_datas_hoje','criar_nfce_lote','consultar_tentativa_nfce') %}{% set section = 'vendas' %}{% endif %}
     {% macro navitem(endpoint, label, glyph) %}
       <a href="{{url_for(endpoint)}}" class="{{'active' if section == endpoint else ''}}" {% if section == endpoint %}aria-current="page"{% endif %}>{{icon(glyph)}}<span>{{label}}</span>{% if section == endpoint %}<i class="nav-dot"></i>{% endif %}</a>
     {% endmacro %}

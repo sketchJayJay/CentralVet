@@ -1,0 +1,67 @@
+CENTRALVET — Data de hoje e emissão de NFC-e em lote — 17/11/2026
+
+ACESSO
+Vendas > Datas e emissão em lote.
+
+AS DUAS OPÇÕES
+1. Atualizar datas fiscais para hoje:
+   selecione as vendas e clique no botão. A data da tentativa fiscal recebe
+   o horário atual de Brasília. A data anterior fica no registro de tentativas.
+2. Emitir todas as selecionadas com data de hoje:
+   selecione as vendas e confirme. O sistema emite uma NFC-e por venda,
+   automaticamente e em sequência. Cada nota recebe data e hora novas no
+   início do seu próprio envio, mesmo que o lote atravesse a meia-noite.
+
+HISTÓRICO
+O ajuste é da data fiscal. A data original da venda, os recebimentos, os
+vencimentos e as movimentações de estoque são preservados.
+Notas autorizadas e retornos incertos não recebem nova data automaticamente.
+As rejeições de horário 703 e 704 e as rejeições de pagamento já tratadas
+podem ser corrigidas e reenviadas com horário atual.
+
+PROCESSAMENTO DO LOTE
+Mantenha a página aberta. A aplicação processa uma venda por requisição,
+evitando que todo o lote dependa de um único pedido longo ao servidor.
+É possível pausar após a nota em andamento e continuar pelo mesmo lote.
+O progresso fica salvo. Abrir um lote salvo não inicia envio sem uma ação
+de iniciar/continuar, exceto no redirecionamento da confirmação inicial.
+Vendas já autorizadas são preservadas e não voltam a ser emitidas.
+Vendas presentes em um lote ativo não entram em outro lote sobreposto.
+A numeração é reservada em transação, protegendo envios concorrentes.
+
+FALHAS E CONSULTA
+Uma rejeição fica indicada na própria venda. O lote não repete a mesma nota
+rejeitada automaticamente. Falhas locais são separadas de retornos incertos.
+Em timeout ou resultado incerto, o lote pausa. Use Consultar situação na
+SEFAZ para conferir a mesma chave, sem transmitir outra emissão.
+Uma consulta que não confirme autorização não libera troca de data/chave.
+Tentativas antigas sem prova do resultado permanecem protegidas para revisão.
+O sistema também guarda um registro de transmissão junto ao XML assinado,
+permitindo recuperar uma resposta salva após interrupção do processo.
+
+RELÓGIO DO SERVIDOR
+A emissão usa America/Sao_Paulo e inclui o fuso no XML. Se, mesmo com uma
+tentativa nova, a SEFAZ retornar 703 ou 704, o lote pausa para conferência.
+Nesse caso confira e sincronize o relógio do host/VPS: mudar só o fuso não
+corrige um relógio adiantado ou atrasado. O horário do servidor aparece na tela.
+
+ATUALIZAR NO COOLIFY
+Baixe um backup antes de substituir o código. Mantenha os volumes atuais de
+/app/data e /app/certs, as variáveis existentes e o certificado A1.
+Faça o redeploy pelo Dockerfile. Não é necessário criar novas variáveis.
+A migração acrescenta tabelas de lotes e tentativas no banco existente.
+Este ZIP não contém banco, certificado nem arquivos de teste com vendas reais.
+
+VALIDAÇÃO LOCAL
+41 testes Python aprovados, incluindo datas, fuso informado, duplicidade,
+concorrência, saldo/estoque, timeout, consulta, recuperação e retomada.
+12 casos de pagamento XML passaram pelo schema do NFePHP e três casos PHP
+validaram data/hora de Brasília, inclusive na virada do dia em UTC.
+Conferidos no HTML os controles de seleção, confirmação, andamento e pausa.
+Os testes não transmitem notas reais. A autorização real será o retorno da
+SEFAZ no sistema atualizado.
+
+COMANDOS DE TESTE
+python3 -m unittest discover -s tests -v
+php tests/test_nfce_horario.php
+php tests/test_pagamento_xml.php

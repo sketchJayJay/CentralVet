@@ -4,7 +4,7 @@
 <section class="hero">
   <span class="badge">Vendas</span><h1>Vendas realizadas</h1>
   <p>Histórico de vendas, recibos, status financeiro e pré-notas fiscais.</p>
-  <div class="actions"><a class="btn green" href="{{ url_for('nova_venda') }}">+ Nova venda</a></div>
+  <div class="actions"><a class="btn green" href="{{ url_for('nova_venda') }}">+ Nova venda</a><a class="btn secondary" href="{{ url_for('nfce_lote') }}">Datas e emissão em lote</a><a class="btn secondary" href="{{ url_for('conferencia_fiscal') }}">Somar Pix e cartão</a></div>
 </section>
 <div class="card">
   <form method="get" style="display:flex;gap:8px;margin-bottom:12px"><input name="q" value="{{q}}" placeholder="Buscar cliente ou número"><button>Buscar</button></form>

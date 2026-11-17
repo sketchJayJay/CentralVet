@@ -53,3 +53,21 @@ Financeiro e crediário — 2026-11-10
 - CNPJ, limites dos campos e bloqueio de notas autorizadas validados.
 - Tentativas antigas rejeitadas por pagamento podem ser reenviadas com data atual.
 - Migração aditiva preservando o banco existente.
+
+2026-11-17 — Conferência de vendas de Pix e cartão
+- Seleção por período, pagamento e venda, com soma imediata.
+- Totais de Pix, crédito e débito separados e produtos discriminados.
+- Resumos salvos com exportação PDF e CSV para o contador.
+- Descontos rateados em centavos e vínculo aos recibos originais.
+- Exclusão de notas autorizadas e retornos fiscais incertos da seleção.
+- Preparação preserva estoque, financeiro e numeração fiscal.
+- Emissão de uma nota única pendente do modelo e procedimento do contador.
+
+2026-11-17 — Data fiscal de hoje e emissão individual em lote
+- Botão para atualizar as datas fiscais de todas as vendas selecionadas.
+- Emissão automática em sequência de uma NFC-e por venda.
+- Data/hora atuais de Brasília em cada tentativa, inclusive após 703/704.
+- Histórico da venda e lançamentos financeiros/estoque preservados.
+- Reserva de numeração e trava por venda contra emissões concorrentes.
+- Pausa, retomada, consulta de situação e recuperação de resposta salva.
+- Notas autorizadas e retornos incertos protegidos contra alteração de data.

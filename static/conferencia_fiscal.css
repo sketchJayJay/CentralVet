@@ -1,0 +1,16 @@
+.conferencia-fiscal .conferencia-filtros{display:grid;grid-template-columns:1fr 1fr auto;gap:14px;align-items:end}
+.conferencia-fiscal .conferencia-formas{border:0;padding:14px 0;margin:0;display:flex;gap:18px;flex-wrap:wrap}
+.conferencia-fiscal .conferencia-formas legend{font-size:13px;font-weight:600;padding:0 0 8px}
+.conferencia-fiscal .conferencia-formas label,.conferencia-fiscal .conferencia-acoes label{display:flex;align-items:center;gap:8px;margin:0}
+.conferencia-fiscal input[type=checkbox]{width:18px;height:18px;min-height:18px;flex:0 0 18px;accent-color:#173f34;cursor:pointer}
+.conferencia-fiscal .conferencia-metricas{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}
+.conferencia-fiscal .conferencia-metricas small,.conferencia-fiscal .conferencia-metricas strong,.conferencia-fiscal .conferencia-metricas span{display:block}
+.conferencia-fiscal .conferencia-metricas strong{font-size:24px;margin:8px 0;overflow-wrap:anywhere;color:#173f34}
+.conferencia-fiscal .conferencia-metricas small,.conferencia-fiscal .conferencia-metricas span{font-size:12px;color:#536758}
+.conferencia-fiscal .conferencia-acoes{display:flex;gap:16px;justify-content:space-between;align-items:center;flex-wrap:wrap}
+.conferencia-fiscal .table-wrap{max-width:100%;overflow-x:auto}
+.conferencia-fiscal table{width:100%;min-width:700px}
+.conferencia-fiscal .card p{font-size:13px;line-height:1.6}
+.conferencia-fiscal button:disabled{opacity:.55;cursor:not-allowed}
+@media(max-width:1000px){.conferencia-fiscal .conferencia-metricas{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:560px){.conferencia-fiscal .conferencia-filtros{grid-template-columns:1fr}.conferencia-fiscal .conferencia-metricas{gap:9px}.conferencia-fiscal .conferencia-metricas strong{font-size:19px}.conferencia-fiscal .conferencia-formas{gap:12px}.conferencia-fiscal .conferencia-acoes{align-items:flex-start;flex-direction:column}.conferencia-fiscal .conferencia-acoes button{width:100%}}

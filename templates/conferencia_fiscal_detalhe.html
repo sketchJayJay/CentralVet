@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block extra_head %}<link rel="stylesheet" href="{{ url_for('static', filename='conferencia_fiscal.css') }}?v=20261117">{% endblock %}
+{% block content %}
+<div class="conferencia-fiscal">
+  <section class="hero"><span class="badge">Conferência #{{ registro.id }}</span><h1>Resumo das vendas selecionadas</h1>
+    <p>{{ resumo.inicio|brdate }} a {{ resumo.fim|brdate }} · {{ resumo.vendas|length }} vendas</p>
+    <div class="actions"><a class="btn secondary" href="{{ url_for('conferencia_fiscal') }}">Voltar</a><a class="btn green" href="{{ url_for('exportar_conferencia_fiscal',conferencia_id=registro.id,formato='pdf') }}">Baixar PDF para o contador</a><a class="btn secondary" href="{{ url_for('exportar_conferencia_fiscal',conferencia_id=registro.id,formato='csv') }}">Baixar planilha CSV</a></div>
+  </section>
+  {% if revisar %}<div class="flash erro">Algumas vendas mudaram ou receberam nota após a preparação. Gere outra conferência antes de definir a emissão. Este registro mantém os dados da data em que foi preparado.</div>{% endif %}
+  <div class="card"><b>Modelo da nota: a confirmar com o contador</b><p>Este é um resumo para conferência. A emissão de uma nota única aguarda a definição do modelo, do destinatário e do procedimento fiscal aplicável às vendas anteriores.</p><small>Preparado em {{ registro.criado_em }}. Os recibos originais permanecem vinculados abaixo.</small></div>
+  <div class="conferencia-metricas">
+    <div class="card"><small>Total líquido</small><strong>{{ resumo.total_centavos|centavos_brl }}</strong><span>Subtotal: {{ resumo.bruto_centavos|centavos_brl }}<br>Descontos: {{ resumo.desconto_centavos|centavos_brl }}</span></div>
+    {% for forma,total in resumo.pagamentos.items() %}<div class="card"><small>{{ forma }}</small><strong>{{ total|centavos_brl }}</strong></div>{% endfor %}
+  </div>
+  <div class="card"><h2>Produtos das vendas</h2><p>Valores já incluem o rateio dos descontos. Produtos com preços ou classificações diferentes ficam separados.</p>
+    <div class="table-wrap"><table><thead><tr><th>Produto</th><th>Qtd.</th><th>Preço unit.</th><th>Subtotal</th><th>Desconto</th><th>Total</th><th>NCM / CFOP do cadastro</th></tr></thead><tbody>
+      {% for p in resumo.produtos %}<tr><td>{{ p.nome }}</td><td>{{ p.quantidade|replace('.',',') }} {{ p.unidade }}</td><td>{{ p.preco_unit_centavos|centavos_brl }}</td><td>{{ p.bruto_centavos|centavos_brl }}</td><td>{{ p.desconto_centavos|centavos_brl }}</td><td>{{ p.total_centavos|centavos_brl }}</td><td>{{ p.ncm or 'Não informado' }}<small class="cell-sub">CFOP {{ p.cfop or 'Não informado' }} · CST/CSOSN {{ p.cst_csosn or 'Não informado' }}</small></td></tr>{% endfor %}
+    </tbody></table></div>
+  </div>
+  <div class="card"><h2>Vendas de origem</h2><div class="table-wrap"><table><thead><tr><th>Venda</th><th>Data</th><th>Cliente</th><th>Pagamento</th><th>Desconto</th><th>Total</th><th>Fiscal na preparação</th></tr></thead><tbody>
+    {% for v in resumo.vendas %}<tr><td><a href="{{ url_for('recibo_venda',venda_id=v.id) }}">#{{ v.id }}</a></td><td>{{ v.data|brdate }}</td><td>{{ v.cliente }}</td><td>{{ v.forma }}</td><td>{{ v.desconto_centavos|centavos_brl }}</td><td>{{ v.total_centavos|centavos_brl }}</td><td>{{ v.fiscal }}{% if v.numero_tentativa %}<small class="cell-sub">Tentativa {{ v.numero_tentativa }} / série {{ v.serie_tentativa }} · cStat {{ v.cstat }}</small>{% endif %}</td></tr>{% endfor %}
+  </tbody></table></div></div>
+</div>
+{% endblock %}

@@ -12,12 +12,18 @@ if (!file_exists($autoload)) {
     echo json_encode([
         'ok' => false,
         'authorized' => false,
+        'transmission_started' => false,
         'error' => 'Dependências fiscais não instaladas. Rode o deploy pelo Dockerfile desta versão (Composer/NFePHP).'
     ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
     exit(2);
 }
 require_once $autoload;
 require_once __DIR__ . '/pagamento.php';
+require_once __DIR__ . '/emissao_horario.php';
+
+$transmissionStarted = false;
+$progressPath = '';
+$authorizationConfirmed = false;
 
 use NFePHP\Common\Certificate;
 use NFePHP\NFe\Common\Standardize;
@@ -28,6 +34,22 @@ use NFePHP\DA\NFe\Danfe;
 use NFePHP\DA\NFe\Danfce;
 
 function out(array $data, int $code = 0): void {
+    if (($GLOBALS['p']['action'] ?? '') === 'emit_nfce') {
+        $data['transmission_started'] = $GLOBALS['transmissionStarted'] ?? false;
+        foreach (['chaveGerada'=>'chave','signedPath'=>'signed_xml_path','xmlPath'=>'xml_path','pdfPath'=>'danfe_path'] as $global=>$campo) {
+            if (!empty($GLOBALS[$global]) && empty($data[$campo])) $data[$campo] = $GLOBALS[$global];
+        }
+        if ($GLOBALS['authorizationConfirmed'] ?? false) {
+            $data['authorized'] = true;
+            $data['cStat'] = $GLOBALS['cStat'];
+            $data['protocolo'] = $GLOBALS['nProt'];
+            $data['xMotivo'] = $GLOBALS['xMotivo'];
+            if (isset($data['error'])) $data['warning'] = $data['error'];
+        }
+        if (!empty($GLOBALS['progressPath'])) {
+            file_put_contents($GLOBALS['progressPath'],json_encode($data,JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),LOCK_EX);
+        }
+    }
     echo json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
     exit($code);
 }
@@ -168,6 +190,41 @@ try {
         ]);
     }
 
+    if ($action === 'consult_nfce') {
+        $chave = digits($p['chave'] ?? '');
+        $signedPath = s($p['signed_xml_path'] ?? '');
+        if (strlen($chave) !== 44 || !$signedPath || !is_file($signedPath)) throw new RuntimeException('Chave ou XML assinado não disponível para consulta.');
+        $signed = file_get_contents($signedPath);
+        $dom = new DOMDocument();
+        if (!$dom->loadXML($signed)) throw new RuntimeException('XML assinado inválido.');
+        $inf = firstNode(new DOMXPath($dom),'//*[local-name()="infNFe"]');
+        if (!$inf instanceof DOMElement || preg_replace('/^NFe/','',$inf->getAttribute('Id')) !== $chave) throw new RuntimeException('A chave não corresponde ao XML desta tentativa.');
+        $tools = makeTools($p,65);
+        $response = $tools->sefazConsultaChave($chave);
+        $obj = (new Standardize($response))->toStd();
+        $prot = $obj->protNFe->infProt ?? null;
+        $cStat = (string)($prot->cStat ?? $obj->cStat ?? '');
+        $xMotivo = (string)($prot->xMotivo ?? $obj->xMotivo ?? 'Situação não identificada.');
+        if (!in_array($cStat,['100','150'],true)) out(['ok'=>true,'authorized'=>false,'cStat'=>$cStat,'xMotivo'=>$xMotivo,'chave'=>$chave]);
+        if ((string)($prot->chNFe ?? '') !== $chave || empty($prot->nProt)) throw new RuntimeException('Protocolo da consulta não corresponde à chave desta tentativa.');
+        $xmlPath = dirname($signedPath).'/NFCe-consultada-autorizada.xml';
+        $authorizedXml = Complements::toAuthorize($signed,$response);
+        if (file_put_contents($xmlPath,$authorizedXml) === false) throw new RuntimeException('Não foi possível guardar o XML autorizado consultado.');
+        $pdfPath = dirname($signedPath).'/NFCe-consultada-DANFCE.pdf';
+        $warning = null;
+        try {
+            $danfce = new Danfce($authorizedXml);
+            $danfce->setPaperWidth(58);
+            $danfce->setMargins(1);
+            if (file_put_contents($pdfPath,$danfce->render()) === false) throw new RuntimeException('Falha ao guardar DANFE.');
+        } catch (Throwable $e) {
+            $pdfPath = '';
+            $warning = 'NFC-e autorizada; DANFE precisa ser regenerado: '.$e->getMessage();
+        }
+        out(['ok'=>true,'authorized'=>true,'cStat'=>$cStat,'xMotivo'=>$xMotivo,'chave'=>$chave,'protocolo'=>(string)$prot->nProt,
+            'xml_path'=>$xmlPath,'danfe_path'=>$pdfPath,'signed_xml_path'=>$signedPath,'warning'=>$warning]);
+    }
+
     if ($action === 'emit_nfce') {
         $issuer = $p['issuer'] ?? [];
         $tpAmb = (int)($p['tpAmb'] ?? 2);
@@ -185,8 +242,7 @@ try {
         $inf->pk_nItem = null;
         $mk->taginfNFe($inf);
 
-        $issueIso = s($p['issue_datetime'] ?? '');
-        if (!$issueIso) $issueIso = (new DateTime('now', new DateTimeZone('America/Sao_Paulo')))->format('c');
+        $issueIso = centralvetDataHora(s($p['issue_datetime'] ?? ''));
         $ide = (object)[
             'cUF' => 31,
             'cNF' => s($p['cNF'] ?? '') ?: null,
@@ -407,10 +463,13 @@ try {
         if (!is_dir($outputDir) && !mkdir($outputDir, 0770, true) && !is_dir($outputDir)) throw new RuntimeException('Não foi possível criar o diretório fiscal.');
         $baseName = 'NFCe-' . str_pad((string)((int)($p['nNF'] ?? 1)), 9, '0', STR_PAD_LEFT) . '-serie-' . str_pad((string)((int)($p['serie'] ?? 1)), 3, '0', STR_PAD_LEFT);
         $signedPath = $outputDir . '/' . $baseName . '-assinado.xml';
-        file_put_contents($signedPath, $signed);
+        if (file_put_contents($signedPath, $signed) === false) throw new RuntimeException('Não foi possível guardar o XML assinado.');
 
         $idLoteSeed = digits((string)($p['lote_id'] ?? '')) ?: (string)time();
         $idLote = str_pad(substr($idLoteSeed, -15), 15, '0', STR_PAD_LEFT);
+        $progressPath = $outputDir . '/transmissao.json';
+        if (file_put_contents($progressPath,json_encode(['transmission_started'=>true,'chave'=>$chaveGerada,'signed_xml_path'=>$signedPath]),LOCK_EX) === false) throw new RuntimeException('Não foi possível registrar a tentativa antes do envio.');
+        $transmissionStarted = true;
         $response = $tools->sefazEnviaLote([$signed], $idLote, 1);
         $respObj = (new Standardize($response))->toStd();
         $loteCstat = (string)($respObj->cStat ?? '');
@@ -443,7 +502,10 @@ try {
                 $nProt = (string)($consProt->nProt ?? '');
             }
         }
-        if (!$authorized) out(['ok'=>true,'authorized'=>false,'cStat'=>$cStat,'xMotivo'=>$xMotivo ?: 'NFC-e rejeitada pela SEFAZ.','chave'=>$chave,'signed_xml_path'=>$signedPath,'raw_response'=>$response]);
+        if (!$authorized) out(['ok'=>true,'authorized'=>false,'cStat'=>$cStat,'xMotivo'=>$xMotivo ?: 'NFC-e rejeitada pela SEFAZ.','chave'=>$chave,'signed_xml_path'=>$signedPath,'raw_response'=>$response,
+            'definitive_rejection'=>ctype_digit($cStat) && !in_array($cStat,['100','103','104','105','106','108','109','110','150','204','301','302','539','656'],true)]);
+
+        $authorizationConfirmed = true;
 
         $authorizedXml = Complements::toAuthorize($signed, $response);
         $xmlPath = $outputDir . '/' . $baseName . '-autorizado.xml';

@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block extra_head %}<link rel="stylesheet" href="{{ url_for('static', filename='conferencia_fiscal.css') }}?v=20261117">{% endblock %}
+{% block content %}
+<div class="conferencia-fiscal">
+  <section class="hero">
+    <span class="badge">Conferência fiscal</span><h1>Somar vendas de Pix e cartão</h1>
+    <p>Escolha o período, confira as vendas e prepare o resumo para o contador.</p>
+    <a class="btn secondary" href="{{ url_for('vendas') }}">Voltar às vendas</a>
+  </section>
+  <div class="card"><b>Nota única: aguardando definição do contador</b><p>O modelo da nota e o procedimento fiscal ainda precisam ser definidos. Aqui você reúne os valores e os produtos das vendas para essa conferência.</p></div>
+  <form method="get" class="card filtros-conferencia">
+    <input type="hidden" name="filtrar" value="1">
+    <div class="conferencia-filtros">
+      <div><label for="confInicio">De</label><input type="date" name="inicio" id="confInicio" value="{{ inicio }}" required></div>
+      <div><label for="confFim">Até</label><input type="date" name="fim" id="confFim" value="{{ fim }}" required></div>
+      <button type="submit">Buscar vendas</button>
+    </div>
+    <fieldset class="conferencia-formas"><legend>Pagamentos</legend>{% for forma in todas_formas %}<label><input type="checkbox" name="forma" value="{{ forma }}" {% if forma in formas %}checked{% endif %}>{{ forma }}</label>{% endfor %}</fieldset>
+    <small>São exibidas vendas pagas, sem nota autorizada, incluindo rejeições por dados do pagamento. Retornos fiscais incertos ficam fora desta seleção.</small>
+  </form>
+  <form method="post" action="{{ url_for('preparar_conferencia_fiscal') }}" id="conferenciaSelecao" data-single-submit>
+    <input type="hidden" name="inicio" value="{{ inicio }}"><input type="hidden" name="fim" value="{{ fim }}">
+    {% for forma in formas %}<input type="hidden" name="forma" value="{{ forma }}">{% endfor %}
+    <div class="conferencia-metricas">
+      <div class="card"><small>Total selecionado</small><strong id="confTotal">{{ total_centavos|centavos_brl }}</strong><span id="confQuantidade">{{ rows|length }} vendas</span></div>
+      {% for forma in todas_formas %}<div class="card"><small>{{ forma }}</small><strong data-total-forma="{{ forma }}">{{ pagamentos[forma]|centavos_brl }}</strong></div>{% endfor %}
+    </div>
+    <div class="card">
+      <div class="conferencia-acoes"><h2>Vendas do período</h2><label><input type="checkbox" id="confTodas" {% if rows %}checked{% endif %}>Selecionar todas</label></div>
+      <div class="table-wrap"><table><thead><tr><th>Selecionar</th><th>Venda</th><th>Data</th><th>Cliente</th><th>Pagamento</th><th>Total</th><th>Fiscal</th></tr></thead><tbody>
+        {% for v in rows %}<tr>
+          <td><input type="checkbox" name="venda_id" value="{{ v.id }}" data-centavos="{{ v.total_centavos }}" data-forma="{{ v.forma_pagamento }}" checked aria-label="Selecionar venda {{ v.id }}"></td>
+          <td><a href="{{ url_for('recibo_venda', venda_id=v.id) }}" target="_blank" rel="noopener">#{{ v.id }}</a></td><td>{{ v.data|brdate }}</td><td>{{ v.cliente_nome or 'Consumidor' }}</td>
+          <td>{{ v.forma_pagamento }}</td><td>{{ v.total_centavos|centavos_brl }}</td><td>{{ v.nf_status or 'Não emitida' }}{% if v.nf_cstat %}<small class="cell-sub">cStat {{ v.nf_cstat }}</small>{% endif %}</td>
+        </tr>{% else %}<tr><td colspan="7">Nenhuma venda disponível nesse período e nesses pagamentos.</td></tr>{% endfor %}
+      </tbody></table></div>
+      <div class="conferencia-acoes" style="margin-top:16px"><button type="submit" id="confPreparar" {% if not rows %}disabled{% endif %}>Preparar resumo para o contador</button><span id="confAjuda">Confira a seleção antes de preparar.</span></div>
+    </div>
+  </form>
+  <div class="card"><h2>Resumos preparados</h2><div class="table-wrap"><table><thead><tr><th>Resumo</th><th>Período</th><th>Vendas</th><th>Total</th><th></th></tr></thead><tbody>
+    {% for r in recentes %}<tr><td>#{{ r.id }}</td><td>{{ r.inicio|brdate }} a {{ r.fim|brdate }}</td><td>{{ r.vendas_qtd }}</td><td>{{ r.total_centavos|centavos_brl }}</td><td><a class="btn secondary" href="{{ url_for('ver_conferencia_fiscal',conferencia_id=r.id) }}">Abrir</a></td></tr>{% else %}<tr><td colspan="5">Os resumos que você preparar aparecerão aqui.</td></tr>{% endfor %}
+  </tbody></table></div></div>
+</div>
+<script src="{{ url_for('static', filename='conferencia_fiscal.js') }}?v=20261117"></script>
+{% endblock %}

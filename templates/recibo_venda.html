@@ -15,7 +15,7 @@
   {% else %}
     <form method="post" action="{{ url_for('emitir_fiscal', venda_id=venda.id) }}" style="display:inline" onsubmit="return confirmarEmissaoNFCe(this)">
       <input type="hidden" name="nf_tipo" value="NFC-e">
-      <button class="btn green" id="btn-emitir-nfce">Emitir NFC-e desta venda</button>
+      <button class="btn green" id="btn-emitir-nfce">Emitir NFC-e desta venda com data de hoje</button>
     </form>
     <button type="button" class="btn secondary" id="btn-mptii" onclick="imprimirMPTII({{ venda.id }})">Imprimir recibo simples</button>
   {% endif %}
@@ -36,6 +36,7 @@
 
 <div class="hide-print card" style="margin:12px 0;padding:14px 16px">
   <b>Impressora térmica:</b> MPT-II / MobilePrinter • USB • bobina 58 mm<br>
+  {% if venda.nf_emissao_tentativa_em %}<small>Data fiscal: {{ venda.nf_emissao_tentativa_em[:10]|brdate }} {{ venda.nf_emissao_tentativa_em[11:19] }} · Brasília</small><br>{% endif %}
   {% if venda.nf_status == 'Autorizada SEFAZ' %}
     <b style="color:#087f5b">NFC-e autorizada ✅ Nº {{ venda.nf_numero }} • Série {{ venda.nf_serie or '1' }}</b><br>
     <small>Chave: {{ venda.nf_chave or '-' }}{% if venda.nf_protocolo %}<br>Protocolo: {{ venda.nf_protocolo }}{% endif %}</small><br>
@@ -56,6 +57,10 @@
   </div>
 </div>
 
+{% if tentativas_fiscais %}<details class="hide-print card" id="tentativas-fiscais"><summary><b>Tentativas fiscais e consultas</b></summary>
+  {% for t in tentativas_fiscais %}<div style="margin:12px 0"><b>Tentativa #{{ t.id }} · {{ t.estado }}</b><p>{{ t.emissao_em or t.iniciada_em }} · NFC-e {{ t.numero or '-' }} / série {{ t.serie or '1' }}{% if t.cstat %} · cStat {{ t.cstat }}{% endif %}</p><small>{{ t.motivo or '' }}</small>
+  {% if t.estado in ('Incerta','Em andamento') %}<form method="post" action="{{ url_for('consultar_tentativa_nfce',tentativa_id=t.id) }}"><input type="hidden" name="csrf_token" value="{{ nfce_csrf() }}"><button class="secondary">Consultar situação na SEFAZ</button></form>{% endif %}</div>{% endfor %}
+</details>{% endif %}
 <div class="hide-print card finance-sale-summary">
   {% if conta_venda %}
   <div><b>{{ 'Quitada' if conta_venda.status=='Pago' else 'Saldo da venda: ' ~ (conta_venda.saldo|money) }}</b>
@@ -106,7 +111,7 @@
 function confirmarEmissaoNFCe(form) {
   const btn = document.getElementById('btn-emitir-nfce');
   if (btn && btn.disabled) return false;
-  if (!confirm('Emitir esta venda como NFC-e agora? O sistema enviará o documento para autorização da SEFAZ/MG.')) return false;
+  if (!confirm('Emitir esta venda como NFC-e com a data e a hora atuais de Brasília? O sistema enviará o documento para autorização da SEFAZ/MG.')) return false;
   if (btn) { btn.disabled = true; btn.textContent = 'Enviando para SEFAZ...'; }
   return true;
 }

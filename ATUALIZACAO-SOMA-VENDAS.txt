@@ -1,0 +1,52 @@
+CENTRALVET — Somar vendas de Pix e cartão — 17/11/2026
+
+ACESSO
+Vendas > Somar Pix e cartão.
+
+COMO USAR
+1. Escolha as datas e os pagamentos: Pix, crédito e/ou débito.
+2. As vendas disponíveis começam selecionadas. Você pode retirar vendas
+   individuais ou usar Selecionar todas. Os totais acompanham a seleção.
+3. Clique em Preparar resumo para o contador.
+4. Confira total, descontos, pagamentos e produtos. Baixe o PDF ou o CSV.
+5. Os resumos ficam salvos e podem ser reabertos na mesma tela.
+
+O QUE ENTRA NA SELEÇÃO
+Vendas pagas nesses pagamentos, sem nota autorizada. São aceitas vendas sem
+tentativa fiscal e rejeições definitivas de dados do pagamento, como a 391.
+Retornos fiscais incertos, duplicidades, vendas pendentes e outros meios de
+pagamento ficam fora da seleção. A condição é conferida novamente ao salvar.
+
+COMO OS VALORES SÃO CALCULADOS
+O total é o valor das vendas após os descontos, separado por pagamento.
+Descontos são distribuídos pelos produtos em centavos, sem diferenças na soma.
+Os produtos são discriminados; preços e classificações diferentes ficam
+separados. NCM, CFOP e CST/CSOSN são os dados atuais do cadastro, para revisão.
+As tentativas fiscais anteriores permanecem indicadas nas vendas de origem.
+
+SITUAÇÃO DA NOTA ÚNICA
+O modelo ainda não foi confirmado pelo contador. Esta opção prepara e salva
+uma conferência; não transmite uma nota única e não marca vendas como emitidas.
+O contador precisa definir se o documento é NF-e modelo 55 ou NFC-e modelo 65
+e orientar destinatário, natureza/CFOP, período e procedimento para regularizar
+essas vendas anteriores. O resumo exportado é um documento não fiscal.
+
+PRESERVAÇÃO DOS DADOS
+A preparação não cria outra venda, não baixa estoque, não lança recebimentos
+e não consome numeração fiscal. Um segundo clique com os mesmos dados abre o
+resumo existente. Se as vendas mudarem depois, o resumo salvo sinaliza revisão
+e conserva os valores da data de preparação.
+A emissão individual corrigida na versão anterior permanece disponível nos
+recibos, para cartão e Pix, conforme o fluxo já existente.
+
+ATUALIZAR NO COOLIFY
+Baixe o backup antes de atualizar o código. Mantenha os volumes atuais de
+/app/data e /app/certs, as variáveis e o certificado. Faça o redeploy pelo
+Dockerfile. A novidade cria apenas a tabela fiscal_conferencias no banco atual.
+Não há banco de dados nem certificado dentro deste ZIP.
+
+VALIDAÇÃO
+24 testes da aplicação aprovados, incluindo os testes da correção anterior.
+Conferidos seleção e totais no HTML, exportação CSV, texto do PDF e paginação
+com 110 vendas. A preparação não chama o motor de emissão fiscal.
+Executar: python3 -m unittest discover -s tests -v

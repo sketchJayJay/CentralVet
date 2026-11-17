@@ -143,6 +143,7 @@ class PagamentoFiscalTests(unittest.TestCase):
             self.assertIsNone(row[coluna])
 
     def test_reenvio_corrigido_e_idempotencia_nao_repetem_baixa(self):
+        numeros=set()
         for forma in ('Cartão crédito','Cartão débito','Pix','Dinheiro'):
             with self.subTest(forma=forma):
                 venda_id=self.venda(forma)
@@ -159,7 +160,9 @@ class PagamentoFiscalTests(unittest.TestCase):
                 self.assertTrue(result['authorized'])
                 self.assertTrue(again['authorized'])
                 self.assertEqual(len(captured),1)
-                self.assertEqual(captured[0]['nNF'],87)
+                self.assertEqual(captured[0]['nNF'],87+len(numeros))
+                self.assertNotIn(captured[0]['nNF'],numeros)
+                numeros.add(captured[0]['nNF'])
                 self.assertEqual(captured[0]['issue_datetime'][:10],cv.today_str())
                 self.assertEqual(captured[0]['valor_pago'],45)
                 if forma=='Dinheiro':
