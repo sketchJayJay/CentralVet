@@ -5,6 +5,7 @@
   <h1>Fiscal</h1>
   <p>Compras, devoluções e documentos fiscais.</p>
   <div class="actions">
+    <a class="btn green" href="{{ url_for('notas_emitidas') }}">Notas emitidas por mês</a>
     <a class="btn green" href="{{ url_for('importar_xml') }}">Importar XML de compra</a>
     <a class="btn" href="{{ url_for('nova_devolucao') }}">Nota de devolução</a>
     <a class="btn secondary" href="{{ url_for('devolucoes') }}">Ver devoluções</a>

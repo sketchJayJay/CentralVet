@@ -1,0 +1,9 @@
+.arquivo-filtros,.arquivo-cabecalho{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}
+.arquivo-filtros form{min-width:220px}.arquivo-linha{display:flex;gap:8px}.arquivo-linha select{min-width:170px}
+.arquivo-exportar{flex:1;justify-content:flex-end}.arquivo-cabecalho h2{margin:0}.arquivo-ajuda{color:var(--muted,#627488);font-size:.9rem;line-height:1.65}
+.arquivo-tabela td{vertical-align:top}.arquivo-acoes{display:flex;gap:7px;flex-wrap:wrap}.arquivo-chave{margin-top:8px;font-size:.8rem;max-width:260px}.arquivo-chave summary{cursor:pointer}.arquivo-chave p{overflow-wrap:anywhere}
+.arquivo-erro{display:block;color:#a42b21;max-width:360px;margin-top:8px}.arquivo-aviso{border-left:4px solid #d89420;background:#fff9ed;line-height:1.6}
+#arquivo-compartilhar{border:0;border-radius:18px;padding:26px;max-width:620px;width:calc(100% - 28px);box-shadow:0 20px 90px #071c3b55;color:#18324b}
+#arquivo-compartilhar::backdrop{background:#081c39a6}#arquivo-compartilhar p{overflow-wrap:anywhere;line-height:1.65}
+#arquivo-compartilhar [hidden]{display:none!important}
+@media(max-width:700px){.arquivo-filtros form{width:100%}.arquivo-linha select{flex:1}.arquivo-exportar{justify-content:flex-start;width:100%}.arquivo-exportar>*{flex:1 1 180px;text-align:center}.arquivo-cabecalho{align-items:flex-start}}

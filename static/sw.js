@@ -1,4 +1,4 @@
-const CACHE_NAME = 'centralvet-nfce-lote-v9-20261117';
+const CACHE_NAME = 'centralvet-xml-arquivo-v10-20261118';
 const STATIC_ASSETS = [
   '/static/style.css?v=20261110-financeiro',
   '/static/impressora_mptii.js?v=20261103',
@@ -7,6 +7,8 @@ const STATIC_ASSETS = [
   '/static/conferencia_fiscal.js?v=20261117',
   '/static/nfce_lote.css?v=20261117',
   '/static/nfce_lote.js?v=20261117',
+  '/static/notas_emitidas.css?v=20261118',
+  '/static/notas_emitidas.js?v=20261118',
   '/static/centralvet_logo.png',
   '/static/icon-192.png',
   '/static/icon-512.png',

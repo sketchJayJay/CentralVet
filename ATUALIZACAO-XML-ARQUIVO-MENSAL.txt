@@ -1,0 +1,67 @@
+CENTRALVET — XML DE PRODUTOS E NOTAS EMITIDAS
+Atualização de 18/11/2026
+
+1. IMPORTAR NCM, CFOP E CST/CSOSN
+Abra Importar XML e envie a nota de compra.
+
+Produtos + entrada no estoque:
+- Cadastra produtos novos e dá entrada nas quantidades compradas.
+- Captura NCM, CFOP, CST ou CSOSN especificamente do ICMS e a origem.
+- Impede lançar a mesma nota novamente como nova entrada de estoque.
+
+Somente dados fiscais — sem alterar estoque:
+- Use para recuperar códigos de notas que já foram importadas.
+- Atualiza somente produtos encontrados no cadastro.
+- Não altera quantidade, custo, preço, margem, fornecedor ou financeiro.
+- Mostra ao final quantos itens não foram encontrados.
+- Permite repetir um XML já importado sem lançar uma nova entrada.
+
+Os códigos originais da nota aparecem em Produtos > Editar produto.
+Zeros à esquerda são preservados, por exemplo NCM 01012100 e CST 00.
+Campos CFOP e CST/CSOSN já preenchidos no cadastro são preservados por
+padrão. Para substituí-los pelos valores da nota, marque a opção da tela.
+NCM é atualizado quando informado no XML. Dados ausentes no XML não apagam
+os códigos configurados. CST de PIS/COFINS não é usado como CST de ICMS.
+O CFOP da compra pode ser diferente do necessário na venda; a configuração
+de saída deve ser conferida com a contabilidade.
+
+2. ARQUIVO DE NOTAS EMITIDAS
+Abra Notas emitidas no menu, ou Fiscal > Notas emitidas por mês.
+
+- Reúne NFC-e de vendas (65) e NF-e de devolução (55) autorizadas pelo sistema.
+- Salva uma cópia do XML autorizado e do DANFE PDF após a autorização.
+- Notas anteriores com arquivos locais disponíveis entram ao abrir a tela.
+- O mês é o da emissão do XML, considerando o fuso de Brasília.
+- Permite baixar XML, PDF ou ZIP de cada nota.
+- Permite baixar todos os XMLs do mês ou XML + PDF em um ZIP.
+- O pacote inclui RELACAO_NOTAS.csv, com chave, protocolo, data e valor.
+- Documentos de homologação são identificados e ficam em pasta separada.
+- Arquivos ausentes ou inválidos aparecem como pendência. Pacotes afetados
+  têm PARCIAL no nome e incluem PENDENCIAS.txt. Não é criado XML substituto.
+- Documentos sem data identificável ficam na opção Data a conferir.
+- Downloads exigem login; certificados e banco não entram nos pacotes.
+
+3. WHATSAPP / CONTABILIDADE
+Clique em Compartilhar / WhatsApp no mês ou Compartilhar na nota.
+Aguarde preparar o ZIP e toque no botão para escolher o aplicativo.
+Em navegadores compatíveis, é possível anexar o arquivo pela janela nativa.
+Quando o navegador não compartilha arquivos, baixe o ZIP, abra o WhatsApp
+e anexe manualmente à conversa. O botão Abrir WhatsApp prepara só o texto.
+O sistema não envia documentos automaticamente a um contato.
+
+4. ATUALIZAR NO COOLIFY
+Substitua os arquivos do projeto pelo conteúdo deste ZIP e faça o redeploy
+com o Dockerfile atual. A migração acrescenta os campos e a tabela de
+arquivo; as vendas e os cadastros existentes são mantidos.
+
+Mantenha os mesmos volumes persistentes em /app/data e /app/certs.
+Os documentos ficam em /app/data/fiscal/emitidas/ANO-MES e o índice fica
+no banco atual. Não substitua esses volumes por pastas vazias do ZIP.
+Para um backup completo, inclua /app/data/fiscal além do banco: o backup
+do banco e seu espelho não incluem os bytes dos XMLs e PDFs.
+
+5. VALIDAÇÃO LOCAL
+python3 -m unittest discover -s tests -p 'test_*.py'
+Testes com XMLs sintéticos e motor fiscal simulado, sem emissão real.
+Os testes JavaScript de compartilhamento usam jsdom instalado separadamente:
+NODE_PATH=/caminho/node_modules node tests/test_arquivo_ui.cjs

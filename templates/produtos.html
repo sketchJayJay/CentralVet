@@ -68,7 +68,7 @@
     <td>{{ p.codigo }}</td><td><b>{{ p.nome }}</b><br><small>{{ p.categoria }}</small></td>
     <td><span class="pill {{ 'red' if p.estoque <= p.estoque_minimo else 'green' }}"><b>{{ p.estoque|num }}</b>&nbsp;{{ p.unidade or 'UN' }}</span></td>
     <td>{{ p.preco_custo|money }}</td><td><b>{{ (p.margem_lucro or 0)|num }}%</b></td><td><b>{{ p.preco_venda|money }}</b></td>
-    <td><small>EAN {{ p.ean or '-' }}<br>NCM {{ p.ncm or '-' }} • CEST {{ p.cest or '-' }}<br>CFOP {{ p.cfop or '-' }} • {{ p.cst_csosn or '-' }}</small></td>
+    <td><small>EAN {{ p.ean or '-' }}<br>NCM {{ p.ncm or '-' }} • CEST {{ p.cest or '-' }}<br>Cadastro: CFOP {{ p.cfop or '-' }} • CST/CSOSN {{ p.cst_csosn or '-' }}{% if p.fiscal_xml_atualizado_em %}<br><b>XML:</b> NCM {{ p.ncm_xml or '-' }}<br>CFOP {{ p.cfop_xml or '-' }} • {{ p.tipo_icms_xml or 'CST/CSOSN' }} {{ p.cst_csosn_xml or '-' }}{% endif %}</small></td>
     <td style="white-space:nowrap"><a class="btn secondary" href="{{ url_for('editar_produto', item_id=p.id) }}">Editar</a>
       <form method="post" action="{{ url_for('excluir_produto', item_id=p.id) }}" style="display:inline" onsubmit="return confirm('Excluir produto?')"><button class="danger">Excluir</button></form></td>
   </tr>

@@ -35,13 +35,27 @@
     <div><label>Cód. barras/EAN</label><input name="ean" value="{{ row.ean or '' }}"></div>
     <div><label>NCM</label><input name="ncm" value="{{ row.ncm or '' }}"></div>
     <div><label>CEST</label><input name="cest" value="{{ row.cest or '' }}"></div>
-    <div><label>CFOP</label><input name="cfop" value="{{ row.cfop or '' }}"></div>
-    <div><label>CST/CSOSN</label><input name="cst_csosn" value="{{ row.cst_csosn or '' }}"></div>
+    <div><label>CFOP do cadastro</label><input name="cfop" value="{{ row.cfop or '' }}"><small>Conferir para a operação de emissão.</small></div>
+    <div><label>CST/CSOSN do cadastro</label><input name="cst_csosn" value="{{ row.cst_csosn or '' }}"></div>
     <div><label>Alíquota %</label><input name="aliquota" value="{{ row.aliquota }}"></div>
   </div>
   <button class="green">Salvar alterações</button><a class="btn secondary" href="{{ url_for('produtos') }}">Voltar</a>
 </form>
 </div>
+{% if row.fiscal_xml_atualizado_em %}
+<div class="card">
+  <h2>Códigos originais da última nota de compra</h2>
+  <div class="row">
+    <div><label>NCM do XML</label><input readonly value="{{ row.ncm_xml or '' }}" aria-label="NCM original do XML"></div>
+    <div><label>CFOP do XML</label><input readonly value="{{ row.cfop_xml or '' }}" aria-label="CFOP original do XML"></div>
+    <div><label>{{ row.tipo_icms_xml or 'CST/CSOSN' }} do ICMS no XML</label><input readonly value="{{ row.cst_csosn_xml or '' }}" aria-label="CST ou CSOSN original do ICMS"></div>
+    <div><label>Origem da mercadoria no ICMS</label><input readonly value="{{ row.origem_icms_xml or '' }}"></div>
+  </div>
+  <p><small>Atualizado em {{ row.fiscal_xml_atualizado_em }}. O código do XML de compra pode ser diferente do necessário para a venda.</small></p>
+  <p style="overflow-wrap:anywhere"><small>Chave da nota: {{ row.chave_fiscal_xml }}</small></p>
+  {% if not row.cst_csosn_xml %}<p class="pill red">CST/CSOSN do ICMS não encontrado neste item do XML.</p>{% endif %}
+</div>
+{% endif %}
 <script>
 (function(){
   const custo = document.getElementById('preco_custo');

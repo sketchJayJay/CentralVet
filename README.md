@@ -172,3 +172,14 @@ O PDF 58 mm continua disponível apenas como reserva.
 
 ## Margem automática por produto
 No cadastro/edição do produto, informe o preço de custo e a margem desejada. Exemplo: custo R$ 100,00 + margem 20% = venda R$ 120,00. Há atalhos de porcentagem e o preço final pode ser ajustado manualmente.
+## XML de produtos e notas emitidas por mês — 18/11/2026
+
+Consulte ATUALIZACAO-XML-ARQUIVO-MENSAL.txt. A importação captura NCM, CFOP
+e CST/CSOSN do ICMS por item e permite atualizar só os dados fiscais, sem
+repetir o estoque. Os códigos originais ficam visíveis no produto.
+
+O menu **Notas emitidas** organiza NFC-e de vendas e NF-e de devolução por
+mês de emissão, com XML autorizado, PDF, pacote mensal e compartilhamento.
+As cópias ficam em `/app/data/fiscal/emitidas`; mantenha esse diretório no
+volume persistente e inclua os arquivos na rotina de backup.
+

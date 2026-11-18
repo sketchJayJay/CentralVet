@@ -77,6 +77,7 @@
       <div class="menu-label">FISCAL E CONTROLE</div>
       {{navitem('importar_xml','Importar XML','file')}}
       {{navitem('fiscal','Fiscal NF-e / NFC-e','shield')}}
+      {{navitem('notas_emitidas','Notas emitidas','file')}}
       {{navitem('devolucoes','Devoluções','return')}}
       {{navitem('relatorios','Relatórios','chart')}}
       {{navitem('backups','Backups','shield')}}
@@ -85,7 +86,7 @@
   </aside>
   <main class="main">
     <header class="workspace-topbar hide-print">
-      <div><span class="workspace-overline">CENTRALVET AGROPECUÁRIA</span><div class="workspace-breadcrumb">Gestão <span>/</span> {{ {'index':'Painel geral','nova_venda':'Nova venda','vendas':'Vendas','produtos':'Produtos','estoque':'Estoque','clientes':'Clientes','fornecedores':'Fornecedores','contas_pagar':'Contas a pagar','contas_receber':'Contas a receber','crediario_cliente':'Ficha do cliente','ver_conta':'Detalhes da conta','nova_conta':'Nova conta','editar_conta':'Editar conta','financeiro':'Financeiro','fiscal':'Fiscal','importar_xml':'Importar XML','devolucoes':'Devoluções','relatorios':'Relatórios','backups':'Backups'}.get(request.endpoint, 'Detalhes') }}</div></div>
+      <div><span class="workspace-overline">CENTRALVET AGROPECUÁRIA</span><div class="workspace-breadcrumb">Gestão <span>/</span> {{ {'index':'Painel geral','nova_venda':'Nova venda','vendas':'Vendas','produtos':'Produtos','estoque':'Estoque','clientes':'Clientes','fornecedores':'Fornecedores','contas_pagar':'Contas a pagar','contas_receber':'Contas a receber','crediario_cliente':'Ficha do cliente','ver_conta':'Detalhes da conta','nova_conta':'Nova conta','editar_conta':'Editar conta','financeiro':'Financeiro','fiscal':'Fiscal','notas_emitidas':'Notas emitidas','importar_xml':'Importar XML','devolucoes':'Devoluções','relatorios':'Relatórios','backups':'Backups'}.get(request.endpoint, 'Detalhes') }}</div></div>
       <div class="workspace-user"><div class="date-display" id="workspaceDate"></div><span class="user-avatar">{{(session.get('user') or 'A')[:1]|upper}}</span><div><b>{{session.get('user') or 'Administrador'}}</b><small>Área de gestão</small></div></div>
     </header>
     {% with messages = get_flashed_messages(with_categories=true) %}

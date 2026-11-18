@@ -12,6 +12,7 @@
     <button type="button" class="btn green" id="btn-mptii" onclick="imprimirMPTII({{ venda.id }})">Imprimir DANFE NFC-e na MPT-II</button>
     <a class="btn secondary" target="_blank" href="{{ url_for('venda_nfce_danfe', venda_id=venda.id) }}">Abrir DANFE NFC-e</a>
     <a class="btn secondary" href="{{ url_for('venda_nfce_xml', venda_id=venda.id) }}">Baixar XML</a>
+    <a class="btn secondary" href="{{ url_for('notas_emitidas') }}">Notas emitidas / contabilidade</a>
   {% else %}
     <form method="post" action="{{ url_for('emitir_fiscal', venda_id=venda.id) }}" style="display:inline" onsubmit="return confirmarEmissaoNFCe(this)">
       <input type="hidden" name="nf_tipo" value="NFC-e">

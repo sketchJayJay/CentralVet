@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block extra_head %}<link rel="stylesheet" href="{{ url_for('static',filename='notas_emitidas.css') }}?v=20261118">{% endblock %}
+{% block content %}
+<section class="hero">
+  <span class="badge">Arquivo fiscal</span><h1>Notas emitidas</h1>
+  <p>XML autorizado e DANFE PDF organizados pelo mês da emissão, para enviar ao cliente e à contabilidade.</p>
+  <div class="actions"><a class="btn secondary" href="{{ url_for('fiscal') }}">Configuração fiscal</a><a class="btn secondary" href="{{ url_for('nfce_lote') }}">Emitir NFC-e em lote</a></div>
+</section>
+{% if erro %}<div class="card arquivo-aviso" role="alert">{{ erro }}</div>{% endif %}
+<div class="card arquivo-filtros">
+  <form method="get">
+    <label for="arquivo-mes">Mês de emissão</label>
+    <div class="arquivo-linha"><select id="arquivo-mes" name="mes">
+      {% for m in meses %}<option value="{{ m }}" {{ 'selected' if m==mes else '' }}>{{ m[5:7] }}/{{ m[:4] }}</option>{% endfor %}
+      {% if sem_data %}<option value="sem-data" {{ 'selected' if mes=='sem-data' else '' }}>Data a conferir ({{ sem_data }})</option>{% endif %}
+    </select><button>Ver notas</button></div>
+  </form>
+  {% if rows %}<div class="actions arquivo-exportar">
+    <a class="btn secondary" href="{{ url_for('pacote_notas_mes',mes=mes,modo='xml') }}">Baixar XML do mês</a>
+    <a class="btn" href="{{ url_for('pacote_notas_mes',mes=mes) }}">Baixar XML + PDF</a>
+    <button type="button" class="green" data-compartilhar="{{ url_for('pacote_notas_mes',mes=mes) }}" data-titulo="Notas CentralVet — {{ mes[5:7] ~ '/' ~ mes[:4] if mes!='sem-data' else 'data a conferir' }}">Compartilhar / WhatsApp</button>
+  </div>{% endif %}
+</div>
+<div class="grid">
+  <div class="card metric"><div class="label">Documentos no período</div><div class="value">{{ rows|length }}</div></div>
+  <div class="card metric"><div class="label">NFC-e / NF-e</div><div class="value">{{ nfce }} / {{ nfe }}</div></div>
+  <div class="card metric"><div class="label">Valor emitido em produção</div><div class="value">{{ (total_centavos / 100)|money }}</div></div>
+  <div class="card metric"><div class="label">Com arquivo pendente</div><div class="value {{ 'red' if pendentes else 'green' }}">{{ pendentes }}</div></div>
+</div>
+{% if sem_data and mes!='sem-data' %}<div class="card arquivo-aviso">Há {{ sem_data }} documento(s) sem data de emissão identificada. <a href="{{ url_for('notas_emitidas',mes='sem-data') }}">Conferir documentos</a></div>{% endif %}
+{% if pendentes %}<div class="card arquivo-aviso" role="status">Há XML ou PDF indisponível. Os pacotes afetados terão <b>PARCIAL</b> no nome e uma lista de pendências dentro do ZIP.</div>{% endif %}
+<div class="card">
+  <div class="arquivo-cabecalho"><h2>{{ 'Documentos com data a conferir' if mes=='sem-data' else 'Notas de ' ~ mes[5:7] ~ '/' ~ mes[:4] }}</h2><span class="pill">Autorizadas na SEFAZ</span></div>
+  <p class="arquivo-ajuda">O arquivo reúne as NFC-e de vendas e as NF-e de devolução emitidas pelo sistema. Notas antigas com arquivos disponíveis entram automaticamente nesta lista.</p>
+  <div class="table-wrap"><table class="arquivo-tabela"><thead><tr><th>Emissão / documento</th><th>Destinatário</th><th>Valor</th><th>Arquivos</th><th>Enviar</th></tr></thead><tbody>
+    {% for n in rows %}<tr>
+      <td><b>{{ 'NFC-e' if n.modelo=='65' else 'NF-e' }} nº {{ n.numero or '—' }}</b><br><small>Série {{ n.serie or '—' }} • {{ n.origem }} #{{ n.origem_id }}<br>{{ n.data_exibicao }}</small>
+        <br><span class="pill {{ 'green' if n.ambiente=='1' else '' }}">{{ 'Produção' if n.ambiente=='1' else ('Homologação' if n.ambiente=='2' else 'Ambiente a conferir') }}</span></td>
+      <td>{{ n.destinatario }}<details class="arquivo-chave"><summary>Chave e protocolo</summary><p>{{ n.chave or 'Chave indisponível' }}</p><small>Protocolo {{ n.protocolo or '—' }}</small></details></td>
+      <td><b>{{ (n.valor_centavos/100)|money }}</b></td>
+      <td><div class="actions">
+        {% if n.xml_ok %}<a class="btn secondary" href="{{ url_for('baixar_nota_emitida',documento_id=n.id,tipo='xml') }}">XML</a>{% else %}<span class="pill red">XML pendente</span>{% endif %}
+        {% if n.pdf_ok %}<a class="btn secondary" href="{{ url_for('baixar_nota_emitida',documento_id=n.id,tipo='pdf') }}">PDF</a>{% else %}<span class="pill red">PDF pendente</span>{% endif %}
+      </div>{% if n.aviso %}<small class="arquivo-erro">{{ n.aviso }}</small>{% endif %}</td>
+      <td><div class="arquivo-acoes"><a class="btn secondary" href="{{ url_for('pacote_nota_emitida',documento_id=n.id) }}">Baixar ZIP</a><button type="button" class="green" data-compartilhar="{{ url_for('pacote_nota_emitida',documento_id=n.id) }}" data-titulo="{{ 'NFC-e' if n.modelo=='65' else 'NF-e' }} nº {{ n.numero }} — CentralVet">Compartilhar</button></div></td>
+    </tr>{% else %}<tr><td colspan="5">Nenhuma nota autorizada neste período. Selecione outro mês para consultar as anteriores.</td></tr>{% endfor %}
+  </tbody></table></div>
+</div>
+<p class="arquivo-ajuda">O mês considera a data de emissão do documento. Homologação aparece identificada e em pasta separada no ZIP.</p>
+<p id="arquivo-status" role="status" aria-live="polite"></p>
+<dialog id="arquivo-compartilhar" aria-labelledby="arquivo-dialogo-titulo">
+  <h2 id="arquivo-dialogo-titulo">Enviar documentos</h2>
+  <p id="arquivo-nome"></p><p id="arquivo-pendencias" class="arquivo-erro" hidden></p>
+  <p id="arquivo-instrucao"></p>
+  <div class="actions"><button type="button" id="arquivo-enviar" class="green" hidden>Escolher WhatsApp ou outro aplicativo</button><a id="arquivo-baixar" class="btn" download>Baixar arquivo</a><a id="arquivo-whatsapp" class="btn secondary" target="_blank" rel="noopener" hidden>Abrir WhatsApp</a><button type="button" class="secondary" id="arquivo-fechar">Fechar</button></div>
+  <p id="arquivo-dialogo-status" role="status" aria-live="polite"></p>
+</dialog>
+{% endblock %}
+{% block scripts %}<script src="{{ url_for('static',filename='notas_emitidas.js') }}?v=20261118" defer></script>{% endblock %}

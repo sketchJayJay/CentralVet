@@ -1,25 +1,29 @@
 {% extends "base.html" %}
+{% block extra_head %}<style>[data-opcao-estoque][hidden]{display:none!important}#importacao-form .row>div{min-width:0}@media(max-width:760px){ #importacao-form .row>div{grid-column:1/-1!important}}</style>{% endblock %}
 {% block content %}
 <section class="hero">
   <span class="badge">XML de entrada</span>
   <h1>Importar nota de compra</h1>
-  <p>Envie o XML da NF-e de entrada para cadastrar produtos, atualizar custo e somar estoque automaticamente.</p>
+  <p>Leia os produtos e os códigos NCM, CFOP e CST/CSOSN do ICMS diretamente da nota de compra.</p>
 </section>
 
 <div class="card dark">
   <h2>O que essa tela faz</h2>
-  <p style="color:#b9d7ee">Quando a CENTRALVET comprar mercadoria, basta importar o XML da nota. O sistema lê fornecedor, produtos, NCM, CFOP, CST/CSOSN, unidade, quantidade e valor de compra. Produto novo entra cadastrado. Produto já existente recebe entrada no estoque.</p>
+  <p style="color:#b9d7ee">Escolha importar a compra com estoque ou atualizar somente os dados fiscais dos produtos já cadastrados. NCM, CFOP e CST/CSOSN originais ficam salvos para consulta no cadastro de cada produto.</p>
 </div>
 
 <div class="card">
   <h2>Importar XML</h2>
-  <form method="post" enctype="multipart/form-data">
+  <form id="importacao-form" method="post" enctype="multipart/form-data">
     <div class="row">
       <div style="grid-column:span 2"><label>Arquivo XML da NF-e</label><input type="file" name="xml_file" accept=".xml,text/xml" required></div>
-      <div><label>Aplicar margem automática?</label><select name="aplicar_margem"><option value="0">Não, ajustar venda depois</option><option value="1">Sim</option></select></div>
-      <div><label>Margem de lucro %</label><input name="margem_lucro" placeholder="Ex.: 35"></div>
+      <div style="grid-column:span 2"><label for="modo-importacao">O que importar?</label><select id="modo-importacao" name="modo_importacao"><option value="completa">Produtos + entrada no estoque</option><option value="fiscal">Somente dados fiscais — sem alterar estoque</option></select><small id="modo-ajuda">Cadastra produtos novos e lança uma entrada de estoque. A mesma nota não pode gerar entrada duas vezes.</small></div>
+      <div data-opcao-estoque><label>Aplicar margem automática?</label><select name="aplicar_margem"><option value="0">Não, ajustar venda depois</option><option value="1">Sim</option></select></div>
+      <div data-opcao-estoque><label>Margem de lucro %</label><input name="margem_lucro" placeholder="Ex.: 35"></div>
     </div>
-    <button class="green">Importar produtos e estoque</button>
+    <label style="display:flex;gap:10px;align-items:flex-start;margin:18px 0 8px"><input type="checkbox" name="substituir_codigos" value="1" style="width:auto;margin-top:3px"><span>Substituir também o CFOP e o CST/CSOSN já preenchidos no cadastro pelos valores deste XML.</span></label>
+    <p><small>Os códigos originais do XML sempre ficam salvos. Campos CFOP e CST/CSOSN vazios são preenchidos; os já configurados são preservados, a menos que marque a opção acima. Confira os códigos de emissão com a contabilidade: o CFOP de compra pode ser diferente do usado na venda.</small></p>
+    <button id="importar-botao" class="green">Importar produtos e estoque</button>
     <a class="btn secondary" href="{{ url_for('produtos') }}">Ver produtos</a>
   </form>
 </div>
@@ -38,3 +42,15 @@
   </div>
 </div>
 {% endblock %}
+{% block scripts %}<script>
+(() => {
+  const modo=document.getElementById('modo-importacao');
+  function atualizar(){
+    const fiscal=modo.value==='fiscal';
+    document.querySelectorAll('[data-opcao-estoque]').forEach(el=>{el.hidden=fiscal;el.querySelectorAll('input,select').forEach(c=>c.disabled=fiscal);});
+    document.getElementById('modo-ajuda').textContent=fiscal?'Atualiza NCM e os códigos fiscais dos produtos encontrados. Não altera estoque, custo ou preço e permite reaproveitar um XML já importado. Produtos não encontrados são informados ao final.':'Cadastra produtos novos e lança uma entrada de estoque. A mesma nota não pode gerar entrada duas vezes.';
+    document.getElementById('importar-botao').textContent=fiscal?'Atualizar dados fiscais':'Importar produtos e estoque';
+  }
+  modo.addEventListener('change',atualizar);atualizar();
+})();
+</script>{% endblock %}

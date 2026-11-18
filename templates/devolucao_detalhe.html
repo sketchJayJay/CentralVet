@@ -9,6 +9,7 @@
     <p>A NF-e ainda não foi autorizada. Veja o retorno da SEFAZ e corrija antes de tentar novamente.</p>
   {% endif %}
   <div class="actions">
+    <a class="btn secondary" href="{{ url_for('notas_emitidas') }}">Notas emitidas / contabilidade</a>
     <a class="btn secondary" href="{{ url_for('devolucoes') }}">Voltar</a>
     <a class="btn" href="{{ url_for('nova_devolucao') }}">Nova devolução</a>
     {% if dev.status == 'Autorizada SEFAZ' %}

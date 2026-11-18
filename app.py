@@ -25,6 +25,9 @@ import financeiro_service as fs
 import pagamento_fiscal as pf
 import conferencia_fiscal as cf
 import nfce_emissao as ne
+import importacao_fiscal as ifx
+import arquivo_fiscal as af
+from arquivo_fiscal_routes import registrar_rotas as registrar_arquivo_fiscal
 from conferencia_fiscal_routes import registrar_rotas as registrar_conferencia_fiscal
 from nfce_lote_routes import registrar_rotas as registrar_nfce_lote
 from financeiro_routes import registrar_rotas
@@ -338,11 +341,7 @@ ST_VALUE_FIELDS = [
 ST_CFOP_COMPRA = {"1403", "2403"}
 
 def get_product_tax(det):
-    for key in ["CSOSN", "CST"]:
-        val = xml_first_text(det, key, "")
-        if val:
-            return val
-    return ""
+    return ifx.dados_icms(det)['codigo']
 
 def analisar_st_produto(det, cfop_origem=""):
     """Detecta se o item da nota veio com ICMS-ST.
@@ -351,8 +350,9 @@ def analisar_st_produto(det, cfop_origem=""):
     e CFOPs comuns de compra com ST. Isso evita perguntar ao contador em cada
     devolução, mas mantém o campo editável para exceções.
     """
-    cst = xml_first_text(det, "CST", "").strip()
-    csosn = xml_first_text(det, "CSOSN", "").strip()
+    icms=ifx.icms_do_item(det)
+    cst = xml_first_text(icms, "CST", "").strip()
+    csosn = xml_first_text(icms, "CSOSN", "").strip()
     cfop = str(cfop_origem or "").strip()
     motivos = []
 
@@ -365,7 +365,7 @@ def analisar_st_produto(det, cfop_origem=""):
 
     campos_valor = []
     for campo in ST_VALUE_FIELDS:
-        valor_txt = xml_first_text(det, campo, "")
+        valor_txt = xml_first_text(icms, campo, "")
         if valor_txt != "" and xml_float(valor_txt) > 0:
             campos_valor.append(campo)
     if campos_valor:
@@ -415,6 +415,7 @@ def parse_nfe_xml(xml_bytes):
         if prod is None:
             continue
         cfop_origem = xml_first_text(prod, "CFOP")
+        icms_item=ifx.dados_icms(det)
         st_info = analisar_st_produto(det, cfop_origem)
         item = {
             "item_origem_idx": int(det.attrib.get("nItem") or (len(dados["itens"]) + 1)),
@@ -429,6 +430,8 @@ def parse_nfe_xml(xml_bytes):
             "valor_unitario": xml_float(xml_first_text(prod, "vUnCom") or xml_first_text(prod, "vUnTrib")),
             "valor_total": xml_float(xml_first_text(prod, "vProd")),
             "cst_csosn": get_product_tax(det),
+            "tipo_icms": icms_item['tipo'],
+            "origem_icms": icms_item['origem'],
             "tem_st": st_info["tem_st"],
             "modo_st": st_info["modo_st"],
             "status_st": st_info["status_st"],
@@ -573,6 +576,20 @@ def fiscal_safe_file(path):
         return None
 
 
+def arquivar_documento_autorizado(origem,origem_id,result):
+    """Uma falha no arquivo nunca desfaz a autorização já recebida da SEFAZ."""
+    if not result.get('authorized'):return result
+    try:
+        cfg=fetch_one('SELECT cnpj FROM fiscal_config WHERE id=1')
+        registros=af.sincronizar(get_db,FISCAL_DIR,cfg['cnpj'] if cfg else '',origem,origem_id)
+        avisos=[aviso for _,aviso in registros if aviso]
+        if avisos:result['archive_warning']=' '.join(avisos)
+    except Exception:
+        app.logger.exception('Falha ao arquivar documento fiscal autorizado: %s #%s',origem,origem_id)
+        result['archive_warning']='A nota foi autorizada. Confira os arquivos em Notas emitidas.'
+    return result
+
+
 def apply_devolucao_stock_once(db, devolucao_id):
     dev = db.execute("SELECT * FROM devolucoes WHERE id=?", (devolucao_id,)).fetchone()
     if not dev or int(dev["baixou_estoque"] or 0) == 1 or int(dev["baixar_estoque_solicitado"] or 0) != 1:
@@ -660,6 +677,7 @@ def emitir_devolucao_sefaz_internal(devolucao_id):
             next_num = max(current_num, nnf + 1)
             db.execute("UPDATE fiscal_config SET nf_numero_inicial=? WHERE id=1", (str(next_num),))
             db.commit()
+        arquivar_documento_autorizado('Devolução',devolucao_id,result)
         backup_db("nfe-devolucao-autorizada")
     else:
         motivo = result.get("xMotivo") or result.get("error") or "Falha não identificada na autorização."
@@ -836,6 +854,7 @@ def emitir_nfce_sefaz_internal(venda_id, lote_id=None, usuario=''):
         except Exception as exc:
             result={'ok':False,'authorized':False,'error':f'Falha na comunicação fiscal: {exc}'}
     result=ne.finalizar(get_db,tentativa,result)
+    arquivar_documento_autorizado('Venda',venda_id,result)
     backup_db('nfce-autorizada' if result.get('authorized') else 'nfce-tentativa')
     return result
 
@@ -848,6 +867,7 @@ def consultar_nfce_tentativa(tentativa_id):
     diario=ne.diario(tentativa)
     if tentativa['concluida_em'] is None and diario.get('authorized') and diario.get('protocolo'):
         result=ne.finalizar(get_db,tentativa,diario)
+        arquivar_documento_autorizado('Venda',tentativa['venda_id'],result)
         backup_db('nfce-autorizacao-recuperada')
         return result
     chave=tentativa['chave'] or diario.get('chave') or ''
@@ -862,6 +882,7 @@ def consultar_nfce_tentativa(tentativa_id):
         return {'ok':False,'authorized':False,'error':'A consulta não retornou protocolo válido para a chave desta tentativa.'}
     if result.get('authorized'):
         result=ne.finalizar(get_db,tentativa,result)
+        arquivar_documento_autorizado('Venda',tentativa['venda_id'],result)
         backup_db('nfce-consultada')
     else:
         result['xMotivo']=(result.get('xMotivo') or result.get('error') or 'Situação não confirmada.')+' A data e a numeração foram preservadas; não houve novo envio de emissão.'
@@ -1164,6 +1185,8 @@ def init_db():
             WHERE id=1
         """, FISCAL_DEFAULTS)
         fs.migrar(db, add_column)
+        ifx.migrar(db,add_column)
+        af.migrar(db)
         cf.migrar(db)
         ne.migrar(db)
         db.commit()
@@ -2598,6 +2621,8 @@ registrar_nfce_lote(app,get_db,backup_db,
     lambda venda_id,lote_id,usuario: emitir_nfce_sefaz_internal(venda_id,lote_id,usuario),
     lambda tentativa_id: consultar_nfce_tentativa(tentativa_id),
     lambda: validar_config_nfce_lote())
+registrar_arquivo_fiscal(app,get_db,login_required,lambda:FISCAL_DIR,
+    lambda:cfg_val(fetch_one('SELECT cnpj FROM fiscal_config WHERE id=1'),'cnpj'))
 
 
 # ---------------- Fiscal / XML ----------------
@@ -2812,96 +2837,43 @@ def enviar_certificado():
 @app.route("/xml/importar", methods=["GET", "POST"])
 @login_required
 def importar_xml():
-    preview = None
     if request.method == "POST":
-        arq = request.files.get("xml_file")
-        aplicar_margem = request.form.get("aplicar_margem") == "1"
-        margem = money_to_float(request.form.get("margem_lucro"))
+        arq=request.files.get("xml_file")
+        modo=request.form.get("modo_importacao","completa")
+        if modo not in ("completa","fiscal"):
+            flash("Escolha o tipo de importação.","erro")
+            return redirect(url_for("importar_xml"))
         if not arq or not arq.filename:
-            flash("Selecione o XML da nota de entrada.", "erro")
+            flash("Selecione o XML da nota de entrada.","erro")
             return redirect(url_for("importar_xml"))
-        xml_bytes = arq.read()
-        xml_hash = hashlib.sha256(xml_bytes).hexdigest()
+        xml_bytes=arq.read()
+        xml_hash=hashlib.sha256(xml_bytes).hexdigest()
         try:
-            dados = parse_nfe_xml(xml_bytes)
-        except Exception as e:
-            flash(f"Não consegui ler esse XML. Verifique se é o XML completo da NF-e. Detalhe: {e}", "erro")
+            dados=parse_nfe_xml(xml_bytes)
+            if not dados['itens']:
+                raise ValueError('Não foram encontrados produtos no XML.')
+            xml_path=ifx.guardar_xml(FISCAL_ORIGINAL_DIR,xml_bytes,xml_hash)
+            with get_db() as db:
+                db.execute('BEGIN IMMEDIATE')
+                resultado=ifx.aplicar(db,dados,modo,
+                    request.form.get('substituir_codigos')=='1',
+                    request.form.get('aplicar_margem')=='1',
+                    money_to_float(request.form.get('margem_lucro')),today_str(),
+                    xml_hash,xml_path,normalizar_unidade)
+        except (ValueError,ET.ParseError,OSError) as exc:
+            flash(f'Não foi possível importar o XML: {exc}',"erro")
             return redirect(url_for("importar_xml"))
-        if not dados["itens"]:
-            flash("XML lido, mas não encontrei produtos dentro da nota.", "erro")
-            return redirect(url_for("importar_xml"))
-        chave_unica = dados["chave"] or xml_hash
-        ja = fetch_one("SELECT * FROM xml_imports WHERE chave=? OR xml_hash=?", (chave_unica, xml_hash))
-        if ja:
-            flash(f"Essa nota/XML já foi importada antes. Registro #{ja['id']}.", "erro")
-            return redirect(url_for("importar_xml"))
-        with get_db() as db:
-            fornecedor_id = None
-            if dados["fornecedor_nome"] or dados["fornecedor_cnpj"]:
-                cnpj_digits = only_digits(dados["fornecedor_cnpj"])
-                fornecedor = None
-                if cnpj_digits:
-                    fornecedor = db.execute("SELECT * FROM fornecedores WHERE cpf_cnpj LIKE ? LIMIT 1", (f"%{cnpj_digits[-8:]}%",)).fetchone()
-                if not fornecedor and dados["fornecedor_nome"]:
-                    fornecedor = db.execute("SELECT * FROM fornecedores WHERE nome LIKE ? LIMIT 1", (dados["fornecedor_nome"],)).fetchone()
-                if fornecedor:
-                    fornecedor_id = fornecedor["id"]
-                else:
-                    cur = db.execute("INSERT INTO fornecedores (nome, cpf_cnpj, observacao) VALUES (?, ?, ?)",
-                                     (dados["fornecedor_nome"] or "Fornecedor do XML", dados["fornecedor_cnpj"], "Cadastrado automaticamente pela importação de XML."))
-                    fornecedor_id = cur.lastrowid
-            novos = atualizados = 0
-            data_mov = dados["emissao"] or today_str()
-            origem = f"XML NF-e {dados['numero'] or ''}".strip()
-            for item in dados["itens"]:
-                prod = None
-                if item["codigo"]:
-                    prod = db.execute("SELECT * FROM produtos WHERE ativo=1 AND codigo=? LIMIT 1", (item["codigo"],)).fetchone()
-                if not prod and item["ean"]:
-                    prod = db.execute("SELECT * FROM produtos WHERE ativo=1 AND ean=? LIMIT 1", (item["ean"],)).fetchone()
-                if not prod:
-                    prod = db.execute("SELECT * FROM produtos WHERE ativo=1 AND nome=? LIMIT 1", (item["nome"],)).fetchone()
-                qtd = item["quantidade"]
-                custo = item["valor_unitario"] or (item["valor_total"] / qtd if qtd else 0)
-                if prod:
-                    produto_id = prod["id"]
-                    novo_preco_venda = prod["preco_venda"] or 0
-                    if aplicar_margem and margem > 0:
-                        novo_preco_venda = custo * (1 + margem / 100.0)
-                    db.execute("""
-                        UPDATE produtos SET nome=?, unidade=?, preco_custo=?, preco_venda=?, margem_lucro=?, estoque=estoque+?,
-                        ncm=?, cfop=?, cst_csosn=?, ean=?, cest=?, ultima_chave_xml=?, fornecedor_id=?
-                        WHERE id=?
-                    """, (item["nome"], normalizar_unidade(item["unidade"]), custo, novo_preco_venda,
-                          margem if aplicar_margem and margem > 0 else (prod["margem_lucro"] or 0), qtd, item["ncm"], item["cfop"],
-                          item["cst_csosn"], item["ean"], item["cest"], chave_unica, fornecedor_id, produto_id))
-                    atualizados += 1
-                else:
-                    preco_venda = custo * (1 + margem / 100.0) if aplicar_margem and margem > 0 else 0
-                    cur = db.execute("""
-                        INSERT INTO produtos (codigo,nome,categoria,unidade,preco_custo,preco_venda,margem_lucro,estoque,estoque_minimo,ncm,cfop,cst_csosn,ean,cest,ultima_chave_xml,fornecedor_id)
-                        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-                    """, (item["codigo"], item["nome"], "Importado XML", normalizar_unidade(item["unidade"]), custo, preco_venda,
-                          margem if aplicar_margem and margem > 0 else 0, qtd, 0,
-                          item["ncm"], item["cfop"], item["cst_csosn"], item["ean"], item["cest"], chave_unica, fornecedor_id))
-                    produto_id = cur.lastrowid
-                    novos += 1
-                db.execute("""
-                    INSERT INTO estoque_mov (data, produto_id, tipo, quantidade, custo_unit, valor_total, origem, observacao)
-                    VALUES (?, ?, 'Entrada', ?, ?, ?, ?, ?)
-                """, (data_mov, produto_id, qtd, custo, item["valor_total"] or qtd*custo, origem, f"Importado pelo XML. Chave: {dados['chave'] or 'sem chave'}"))
-            db.execute("""
-                INSERT INTO xml_imports (chave, xml_hash, numero, serie, emissao, fornecedor_nome, fornecedor_cnpj, total, itens_qtd, observacao)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (chave_unica, xml_hash, dados["numero"], dados["serie"], dados["emissao"], dados["fornecedor_nome"], dados["fornecedor_cnpj"],
-                  dados["total"], len(dados["itens"]), f"{novos} novo(s), {atualizados} atualizado(s)."))
-            db.commit()
-        backup_db("xml-importado")
-        flash(f"XML importado: {novos} produto(s) novo(s), {atualizados} atualizado(s), estoque lançado automaticamente.", "ok")
+        backup_db("xml-fiscal" if modo=='fiscal' else "xml-importado")
+        if modo=='fiscal':
+            flash(f"Dados fiscais atualizados em {resultado['atualizados']} produto(s), sem movimentar estoque, custo ou financeiro.","ok")
+            if resultado['nao_encontrados']:
+                flash(f"{resultado['nao_encontrados']} item(ns) não encontrados no cadastro. Para cadastrar e dar entrada, use a importação completa.","erro")
+        else:
+            flash(f"XML importado: {resultado['novos']} produto(s) novo(s), {resultado['atualizados']} atualizado(s). NCM, CFOP e CST/CSOSN do ICMS capturados por produto.","ok")
         return redirect(url_for("produtos"))
-    ultimos = fetch_all("SELECT * FROM xml_imports ORDER BY id DESC LIMIT 20")
-    cfg = fetch_one("SELECT * FROM fiscal_config WHERE id=1")
-    return render_template("importar_xml.html", ultimos=ultimos, cfg=cfg)
+    ultimos=fetch_all("SELECT * FROM xml_imports ORDER BY id DESC LIMIT 20")
+    cfg=fetch_one("SELECT * FROM fiscal_config WHERE id=1")
+    return render_template("importar_xml.html",ultimos=ultimos,cfg=cfg)
 
 
 # ---------------- Devolução de mercadoria ----------------
